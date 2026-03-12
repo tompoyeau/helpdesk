@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Planning – Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+
+  <style>
+/* ---------------------------------------------------
+   STYLES GÉNÉRAUX
+--------------------------------------------------- */
+
+.sidebar-item {
+  padding: 2px 6px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-item:hover {
+  background: #e0edff;
+}
+
+.sidebar-item.active {
+  background: #e0edff;
+  border-left: 3px solid #2563eb;
+}
+
+/* Scrollbars */
+.scroll-area {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f8fafc;
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+
+/* ---------------------------------------------------
+   MODE SOMBRE — VARIABLES
+--------------------------------------------------- */
+
+.dark {
+  --bg: #0f172a;          /* Fond global */
+  --bg-secondary: #1a1f2b; /* Header + asides (plus foncé) */
+  --bg-light: #1e293b;     /* Contenu central */
+  --bg-card: #243044;      /* Cartes internes */
+  --text: #e2e8f0;
+  --border: #334155;
+}
+
+
+/* ---------------------------------------------------
+   MODE SOMBRE — STRUCTURE GLOBALE
+--------------------------------------------------- */
+
+.dark body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* Header + Asides : plus foncés */
+.dark header,
+.dark aside {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Contenu central */
+.dark main {
+  background-color: var(--bg-light) !important;
+}
+
+/* Cartes internes (ex: #center) */
+.dark #center,
+.dark .bg-white,
+.dark .bg-slate-50 {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border) !important;
+}
+
+/* Bordures */
+.dark .border,
+.dark .border-b,
+.dark .border-l,
+.dark .border-r {
+  border-color: var(--border) !important;
+}
+
+
+/* ---------------------------------------------------
+   MODE SOMBRE — TEXTE
+--------------------------------------------------- */
+
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark p,
+.dark span,
+.dark li {
+  color: var(--text) !important;
+}
+
+.dark .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+
+/* ---------------------------------------------------
+   MODE SOMBRE — INPUTS & BOUTONS
+--------------------------------------------------- */
+
+.dark input,
+.dark select,
+.dark button {
+  background-color: var(--bg-light) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+.dark .hover\:bg-slate-200:hover {
+  background-color: #334155 !important;
+}
+
+
+/* ---------------------------------------------------
+   MODE SOMBRE — TABLEAUX
+--------------------------------------------------- */
+
+.dark table {
+  background-color: var(--bg-card);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.dark thead {
+  background-color: var(--border) !important;
+}
+
+
+/* ---------------------------------------------------
+   MODE SOMBRE — SIDEBAR ITEMS
+--------------------------------------------------- */
+
+.dark .sidebar-item {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.dark .sidebar-item:hover {
+  background-color: #2c3a52 !important;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.dark .sidebar-item.active {
+  background-color: #2c3a52 !important;
+  border-left-color: #4f6fcf !important;
+}
+
+  </style>
+</head>
+
+<body class="h-screen flex flex-col bg-slate-50 text-slate-900">
+
+  <!-- HEADER -->
+  <header class="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold">PL</div>
+      <div>
+        <h1 class="text-lg font-semibold">Planning – Dashboard</h1>
+        <p class="text-xs text-slate-500">Pilotage de l’activité</p>
+      </div>
+
+      <!-- Bouton mode sombre -->
+      <button id="toggleDark" class="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+        <i id="darkIcon" data-lucide="moon"></i>
+      </button>
+    </div>
+
+    <div class="flex items-center gap-3 text-xs">
+
+      <input type="date" id="filterStart" class="rounded bg-slate-100 border px-2 py-1">
+      <input type="date" id="filterEnd" class="rounded bg-slate-100 border px-2 py-1">
+
+      <button id="refresh" class="bg-blue-600 text-white px-3 py-1 rounded">OK</button>
+
+      <label class="cursor-pointer">
+        <span class="px-3 py-1 bg-slate-800 text-white rounded">Importer</span>
+        <input type="file" id="fileInput" class="hidden">
+      </label>
+
+    </div>
+  </header>
+
+
+  <!-- LAYOUT 3 COLONNES -->
+  <div class="flex-1 grid grid-cols-[260px_1fr_240px] overflow-hidden">
+
+    <!-- COLLABORATEURS -->
+    <aside class="border-r bg-white flex flex-col min-h-0">
+
+      <div class="p-4 border-b space-y-2">
+        <button id="viewGlobal" class="px-3 py-2 rounded bg-blue-600 text-white text-sm font-medium w-full">
+          Tableau de bord
+        </button>
+
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="filterActive">
+          <span>Afficher uniquement les FO actuels</span>
+        </label>
+
+      </div>
+
+      <div class="p-3 border-b">
+        <input id="personSearch" placeholder="Rechercher un collaborateur..."
+          class="w-full px-3 py-2 text-xs border rounded bg-slate-50">
+      </div>
+
+      <div class="scroll-area flex-1">
+        <ul id="personList" class="p-2 space-y-1"></ul>
+      </div>
+
+    </aside>
+
+    <!-- CONTENU CENTRAL -->
+    <main class="flex flex-col overflow-hidden min-h-0">
+
+      <!-- PODIUM -->
+      <!-- <section class="p-4 border-b bg-white">
+        <h3 class="text-sm font-semibold mb-2">🏆 Podium Top 5</h3>
+        <div id="podium" class="grid grid-cols-5 gap-2 text-xs"></div>
+      </section> -->
+
+      <!-- CHARTS -->
+      <section>
+        <div id="chartsBlock" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        </div>
+      </section>
+
+      <!-- DETAILS -->
+      <section class="flex-1 p-4 overflow-auto">
+        <div id="center" class="p-4 bg-white border rounded text-xs">Chargement…</div>
+      </section>
+
+    </main>
+
+    <!-- CATÉGORIES -->
+    <aside class="border-l bg-white flex flex-col min-h-0">
+
+      <div class="p-4 border-b flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-slate-700">Catégories</h3>
+        <button class="collapse-btn text-xs text-slate-500 hover:text-slate-700" data-target="categoryList">▼</button>
+      </div>
+
+      <div class="scroll-area flex-1">
+        <ul id="categoryList" class="p-2 space-y-1"></ul>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- JS -->
+  <script src="js/data.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/charts.js"></script>
+
+</body>
+
+</html>
