@@ -36,7 +36,7 @@ async function autoLoad() {
   loadFilter();
 
   try {
-    const r = await fetch("planning_enrichi.json", { cache: "no-store" });
+    const r = await fetch("../python/planning.json", { cache: "no-store" });
     if (r.ok) {
       planning = await r.json();
       const foCheckbox = document.getElementById("filterActive");
