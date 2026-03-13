@@ -165,7 +165,7 @@ driver.quit()
 # -----------------------------
 # EXPORT JSON
 # -----------------------------
-with open("planning_enrichi.json", "w", encoding="utf-8") as f:
+with open("planning.json", "w", encoding="utf-8") as f:
     json.dump(planning, f, ensure_ascii=False, indent=2)
 
-print("[OK] planning_enrichi.json généré (toutes les semaines jusqu'au 2 novembre 2023).")
+print("[OK] planning.json généré (toutes les semaines jusqu'au 2 novembre 2023).")

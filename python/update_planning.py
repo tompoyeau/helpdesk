@@ -16,7 +16,10 @@ URL = "https://planning-helpdesk.web.app/login"
 EMAIL = "tom.poyeau.ext@groupe-mma.fr"
 PASSWORD = "Plutot2023"
 
-JSON_FILE = "planning_enrichi.json"
+GITHUB_TOKEN = "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"       # Ton Personal Access Token GitHub
+GITHUB_REPO_PATH = r"C:\Users\tompo\OneDrive\Documents\Dev\python\helpdesk"  # Chemin local vers ton dépôt GitHub
+
+JSON_FILE = "planning.json"
 
 # -----------------------------
 # CHARGEMENT DU JSON EXISTANT
@@ -213,3 +216,39 @@ with open(JSON_FILE, "w", encoding="utf-8") as f:
     json.dump(planning, f, ensure_ascii=False, indent=2)
 
 print(f"[OK] '{JSON_FILE}' mis à jour avec {nouvelles_entrees} nouvelle(s) entrée(s) ajoutée(s).")
+
+# -----------------------------
+# PUSH AUTOMATIQUE VERS GITHUB
+# -----------------------------
+if nouvelles_entrees > 0:
+    try:
+        from git import Repo
+
+        repo = Repo(GITHUB_REPO_PATH)
+
+        # Configure le token dans l'URL remote si pas déjà fait
+        remote = repo.remotes.origin
+        remote_url = remote.url
+        if "@" not in remote_url:
+            # Injecte le token dans l'URL HTTPS
+            remote_url_with_token = remote_url.replace(
+                "https://", f"https://{GITHUB_TOKEN}@"
+            )
+            remote.set_url(remote_url_with_token)
+
+        # Stage le JSON
+        repo.index.add([JSON_FILE])
+
+        # Commit avec la date du jour
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d %H:%M")
+        repo.index.commit(f"[auto] Mise à jour planning - {today}")
+
+        # Push
+        remote.push()
+        print(f"[OK] JSON poussé sur GitHub avec succès.")
+
+    except Exception as e:
+        print(f"[ERREUR] Push GitHub échoué : {e}")
+else:
+    print("[INFO] Aucune nouvelle donnée, push GitHub ignoré.")
