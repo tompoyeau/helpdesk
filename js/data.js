@@ -52,7 +52,7 @@ async function autoLoad() {
   setDefaultRange();
 
   try {
-    const r = await fetch("./python/planning.json", { cache: "no-store" });
+    const r = await fetch("/helpdesk/python/planning.json", { cache: "no-store" });
     if (r.ok) {
       planning = await r.json();
       initData();
