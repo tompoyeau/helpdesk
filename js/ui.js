@@ -230,55 +230,31 @@ if (window.__UI_JS_LOADED__) {
   function renderCategoryGroups() {
     let html = "";
 
-    // --- CONSOLIDÉS EN HAUT ---
+    // --- CONSOLIDÉS EN HAUT (+ SAMEDI) ---
+    const samedi = filtered.byCategory?.samedi;
     html += `
   <div class="mb-4">
     <h4 class="text-xs font-semibold text-slate-700 mb-2">Horaires consolidés</h4>
     <ul class="space-y-1">
-      ${Object.entries(consolidatedMap).map(([key, obj]) => {
-
-      let total = 0;
-
-      for (const p in filtered.byPerson) {
-        for (const day in filtered.byPerson[p].details) {
-          const entries = filtered.byPerson[p].details[day]
-            .filter(e => obj.cats.includes(e.categorie));
-
-          if (entries.length === 1) total += 0.5;
-          if (entries.length >= 2) total += 1;
-        }
-      }
-
-      return `
+      ${Object.entries(consolidatedMap).map(([key, obj]) => `
           <li class="sidebar-item" data-name="${key}" onclick="selCat('${key}')">
             <div class="flex items-center gap-2">
-              <span>⏱</span>
+              <span>📅</span>
               <span class="truncate max-w-[120px]">${obj.label}</span>
             </div>
           </li>
-        `;
-    }).join("")}
-    </ul>
-  </div>
-`;
-
-    // --- CATÉGORIE SPÉCIALE : SAMEDI ---
-    const sam = filtered.byCategory?.samedi;
-    if (sam) {
-      html += `
-    <div class="mb-4">
-      <h4 class="text-xs font-semibold text-slate-700 mb-2">Jours spéciaux</h4>
-      <ul class="space-y-1">
+        `).join("")}
+      ${samedi ? `
         <li class="sidebar-item" data-name="samedi" onclick="selCat('samedi')">
           <div class="flex items-center gap-2">
             <span>📅</span>
             <span class="truncate max-w-[120px]">Samedi</span>
           </div>
         </li>
-      </ul>
-    </div>
-  `;
-    }
+      ` : ""}
+    </ul>
+  </div>
+`;
 
 
 
@@ -298,7 +274,6 @@ if (window.__UI_JS_LOADED__) {
         return `
               <li class="sidebar-item" data-name="${c}" onclick="selCat('${c}')">
                 <div class="flex items-center gap-2">
-                  <span>🎯</span>
                   <span class="w-3 h-3 rounded-sm" style="background:${colors[c]}"></span>
                   <span class="truncate max-w-[120px]">${c}</span>
                 </div>
