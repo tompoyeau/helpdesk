@@ -19,7 +19,7 @@ PASSWORD = "Plutot2023"
 GITHUB_TOKEN = "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"       # Ton Personal Access Token GitHub
 GITHUB_REPO_PATH = r"C:\Users\tompo\OneDrive\Documents\Dev\python\helpdesk"  # Chemin local vers ton dépôt GitHub
 
-JSON_FILE = "planning.json"
+JSON_FILE = "../planning.json"
 
 # -----------------------------
 # CHARGEMENT DU JSON EXISTANT
