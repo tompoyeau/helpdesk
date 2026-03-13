@@ -1,46 +1,60 @@
-let planning = null;
-let persons = [];
-let categories = [];
-let colors = {};
-let filtered = null;
-let activePersons = null;
+/* ============================================================
+   DATA.JS — Chargement, filtrage et calcul des données planning
+   Expose les globaux : planning, persons, categories, colors,
+   filtered, els, applyPersonFilter, detectActivePersons
+   ============================================================ */
+
+
+/* ============================================================
+   ÉTAT GLOBAL
+   ============================================================ */
+
+let planning   = null; // Données brutes du JSON
+let persons    = [];   // Liste triée des collaborateurs
+let categories = [];   // Liste triée des catégories présentes dans le JSON
+let colors     = {};   // Map catégorie → couleur hex
+let filtered   = null; // Résultat du dernier computeFiltered()
+
+
+/* ============================================================
+   RÉFÉRENCES DOM PARTAGÉES
+   ============================================================ */
 
 const els = {
-  fs: document.getElementById("filterStart"),
-  fe: document.getElementById("filterEnd"),
-  fc: { value: "" },
-  mode: { value: "jours" },
-  limit: { value: 10 },
-  center: document.getElementById("center"),
-  podium: document.getElementById("podium"),
-  kpiP: document.getElementById("kpiPeriod"),
-  kpiD: document.getElementById("kpiDays"),
-  kpiS: document.getElementById("kpiSlots"),
-  kpiT: document.getElementById("kpiTopCategory")
+  fs:     document.getElementById("filterStart"), // Input date début
+  fe:     document.getElementById("filterEnd"),   // Input date fin
+  center: document.getElementById("center")       // Zone de contenu principal
 };
 
+
+/* ============================================================
+   INITIALISATION DE LA PLAGE DE DATES PAR DÉFAUT
+   Par défaut : 1 an glissant jusqu'à aujourd'hui.
+   ============================================================ */
+
 function setDefaultRange() {
-  const t = new Date(), p = new Date();
-  p.setFullYear(t.getFullYear() - 1);
-  els.fs.value = p.toISOString().slice(0, 10);
-  els.fe.value = t.toISOString().slice(0, 10);
+  const today      = new Date();
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(today.getFullYear() - 1);
+
+  els.fs.value = oneYearAgo.toISOString().slice(0, 10);
+  els.fe.value = today.toISOString().slice(0, 10);
 }
 
-function loadFilter() {
-  const saved = localStorage.getItem("activePersons");
-  if (saved) activePersons = JSON.parse(saved);
-}
+
+/* ============================================================
+   CHARGEMENT AUTOMATIQUE DU FICHIER PLANNING
+   Tente de récupérer planning.json depuis le backend Python.
+   En cas d'échec, affiche un message d'erreur dans #center.
+   ============================================================ */
 
 async function autoLoad() {
   setDefaultRange();
-  loadFilter();
 
   try {
     const r = await fetch("../python/planning.json", { cache: "no-store" });
     if (r.ok) {
       planning = await r.json();
-      const foCheckbox = document.getElementById("filterActive");
-      activePersons = foCheckbox.checked ? detectActivePersons() : null;
       initData();
       computeFiltered();
       renderLists();
@@ -48,131 +62,123 @@ async function autoLoad() {
       updateCharts();
       return;
     }
-  } catch { }
-
+  } catch { /* Fichier absent ou erreur réseau */ }
 
   els.center.innerHTML = `<div class="p-4 bg-yellow-50 border text-yellow-900">Aucun fichier planning détecté</div>`;
 }
 
+
+/* ============================================================
+   EXTRACTION DES MÉTADONNÉES (personnes, catégories, couleurs)
+   Appelée une seule fois après le chargement du JSON.
+   ============================================================ */
+
 function initData() {
   persons = Object.keys(planning).sort();
-  const set = new Set(), col = {};
+
+  const catSet = new Set();
+  const colMap = {};
 
   for (const p in planning)
     for (const d in planning[p])
       planning[p][d].forEach(e => {
-        set.add(e.categorie);
-        if (!col[e.categorie]) col[e.categorie] = e.couleur;
+        catSet.add(e.categorie);
+        if (!colMap[e.categorie]) colMap[e.categorie] = e.couleur;
       });
 
-  categories = [...set].sort();
-  colors = col;
-
-  els.fc.innerHTML = `<option value="">Toutes</option>` +
-    categories.map(c => `<option>${c}</option>`).join("");
+  categories = [...catSet].sort();
+  colors     = colMap;
 }
 
+
+/* ============================================================
+   FILTRE DES COLLABORATEURS ACTIFS
+   Source unique de vérité : lit directement la checkbox.
+   Retourne la liste des collaborateurs à inclure (tous si décoché).
+   ============================================================ */
+
 function applyPersonFilter() {
-  if (!activePersons) return persons;
-  return persons.filter(p => activePersons.includes(p));
+  const isChecked = document.getElementById("filterActive").checked;
+  if (!isChecked) return persons;
+  return detectActivePersons();
 }
 
 function detectActivePersons() {
-  const fs = els.fs.value;
-  const fe = els.fe.value;
-
+  // Collaborateurs ayant une entrée dans le planning aujourd'hui.
+  const today   = new Date().toISOString().slice(0, 10);
   const actives = new Set();
 
-  for (const p in planning) {
-    for (const d in planning[p]) {
-      if (d >= fs && d <= fe && planning[p][d].length > 0) {
-        actives.add(p);
-      }
-    }
-  }
+  for (const p in planning)
+    if (planning[p][today]?.length > 0)
+      actives.add(p);
 
   return [...actives].sort();
 }
 
-function saveFilter() {
-  localStorage.setItem("activePersons", JSON.stringify(activePersons));
-}
+
+/* ============================================================
+   CALCUL DES DONNÉES FILTRÉES
+   Agrège les entrées du planning selon la plage de dates
+   et le filtre de personnes actif.
+
+   Produit filtered :
+     - byCat      : { categorie → nb entrées }
+     - byMonth    : { "YYYY-MM" → nb entrées }  (réservé pour les graphiques)
+     - byPerson   : { personne → { details: { date → [entrées] } } }
+     - byCategory : { "samedi" → { d: Set<date>, persons: { personne → { days: Set<date> } } } }
+   ============================================================ */
 
 function computeFiltered() {
-  const fs = els.fs.value, fe = els.fe.value, fc = els.fc.value;
+  const fs = els.fs.value;
+  const fe = els.fe.value;
 
-  const byCat = {}, byMonth = {}, byPerson = {}, byDay = new Set();
-  let slots = 0;
+  const byCat = {}, byMonth = {}, byPerson = {};
 
-  const list = applyPersonFilter();
-
-  for (const p of list)
+  for (const p of applyPersonFilter())
     for (const d in planning[p]) {
       if (fs && d < fs) continue;
       if (fe && d > fe) continue;
 
       planning[p][d].forEach(e => {
-        if (fc && e.categorie !== fc) return;
-
         byCat[e.categorie] = (byCat[e.categorie] || 0) + 1;
 
-        const m = d.slice(0, 7);
-        byMonth[m] = (byMonth[m] || 0) + 1;
+        byMonth[d.slice(0, 7)] = (byMonth[d.slice(0, 7)] || 0) + 1;
 
-        byPerson[p] = byPerson[p] || { slots: 0, days: new Set(), details: {} };
-        byPerson[p].slots++;
-        byPerson[p].days.add(d);
+        byPerson[p] = byPerson[p] || { details: {} };
         (byPerson[p].details[d] = byPerson[p].details[d] || []).push(e);
-
-        byDay.add(d);
-        slots++;
       });
     }
 
-  filtered = { byCat, byMonth, byPerson, byDay, totalSlots: slots };
-  // --- Catégorie spéciale : Samedi (hors astreinte) ---
-filtered.byCategory = filtered.byCategory || {};
-filtered.byCategory["samedi"] = { slots: 0, d: new Set(), persons: {} };
+  filtered = { byCat, byMonth, byPerson };
 
-for (const p in filtered.byPerson) {
-  const details = filtered.byPerson[p].details;
+  // --- Catégorie calculée : Samedis travaillés (hors astreinte) ---
+  // Stocké dans filtered.byCategory car absent du JSON brut.
+  filtered.byCategory = {
+    samedi: { d: new Set(), persons: {} }
+  };
 
-  for (const day in details) {
-    const date = new Date(day);
-    const isSaturday = date.getDay() === 6;
+  for (const p in byPerson) {
+    for (const day in byPerson[p].details) {
+      if (new Date(day).getDay() !== 6) continue;
 
-    if (!isSaturday) continue;
+      const entries = byPerson[p].details[day].filter(e =>
+        !e.categorie.toLowerCase().includes("astreinte")
+      );
+      if (!entries.length) continue;
 
-    // Exclure l'astreinte
-    const entries = details[day].filter(e =>
-      !e.categorie.toLowerCase().includes("astreinte")
-    );
+      filtered.byCategory.samedi.d.add(day);
 
-    if (entries.length === 0) continue;
+      if (!filtered.byCategory.samedi.persons[p])
+        filtered.byCategory.samedi.persons[p] = { days: new Set() };
 
-    // Ajout global
-    filtered.byCategory["samedi"].slots += entries.length;
-    filtered.byCategory["samedi"].d.add(day);
-
-    // Ajout par personne
-    if (!filtered.byCategory["samedi"].persons[p]) {
-      filtered.byCategory["samedi"].persons[p] = { slots: 0, days: new Set() };
+      filtered.byCategory.samedi.persons[p].days.add(day);
     }
-
-    filtered.byCategory["samedi"].persons[p].slots += entries.length;
-    filtered.byCategory["samedi"].persons[p].days.add(day);
   }
 }
 
-}
+
+/* ============================================================
+   ÉVÉNEMENTS
+   ============================================================ */
 
 document.addEventListener("DOMContentLoaded", autoLoad);
-
-document.getElementById("filterActive").onclick = () => {
-  activePersons = detectActivePersons();
-  saveFilter();
-  renderLists();
-  computeFiltered();
-  renderGlobal();
-  updateCharts();
-};
