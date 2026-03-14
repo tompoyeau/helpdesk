@@ -129,3 +129,4 @@ dmypy.json
 python/extract.py
 python/update_planning.py
 setup_tache_plannifiee.ps1
+planning.json
