@@ -107,12 +107,6 @@ if (window.__UI_JS_LOADED__) {
     if (e.key === "Escape") { closeAllDrawers(); closeDateSheet(); }
   });
 
-  // Fermer les drawers automatiquement après sélection sur mobile
-  const origSelPerson = window.selPerson;
-  window.selPerson = (n) => { closeAllDrawers(); navigate({ view: "person", name: n }); };
-  const origSelCat = window.selCat;
-  window.selCat = (c) => { closeAllDrawers(); navigate({ view: "cat", name: c }); };
-
   // Exposer les fonctions drawer globalement (appelées depuis onclick HTML)
   window.closeAllDrawers = closeAllDrawers;
   window.closeDateSheet  = closeDateSheet;
@@ -122,6 +116,11 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   lucide.createIcons();
+
+  /* ============================================================
+     MODE SOMBRE
+     Bascule la classe "dark" sur <html> et met à jour l'icône.
+     ============================================================ */
 
   const toggleDark = document.getElementById("toggleDark");
   const darkIcon = document.getElementById("darkIcon");
@@ -699,6 +698,7 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   function selPerson(n) {
+    closeAllDrawers();
     navigate({ view: "person", name: n });
   }
 
@@ -708,6 +708,7 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   function selCat(c) {
+    closeAllDrawers();
     navigate({ view: "cat", name: c });
   }
 
@@ -720,6 +721,7 @@ if (window.__UI_JS_LOADED__) {
 
   // Bouton "Tableau de bord" : retour à la vue globale
   document.getElementById("viewGlobal").onclick = () => {
+    closeAllDrawers();
     navigate({ view: "global" });
   };
 
