@@ -311,15 +311,53 @@ html, body {
 
 
 /* ============================================================
-   CHECKBOX
+   TOGGLE SWITCH
    ============================================================ */
 
-.custom-checkbox {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent);
-  cursor: pointer;
+.toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: var(--border-input);
+  border-radius: 999px;
   flex-shrink: 0;
+  transition: background 0.2s ease;
+  cursor: pointer;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.toggle-input:checked + .toggle-track {
+  background: var(--accent);
+}
+
+.toggle-input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(14px);
+}
+
+.toggle-text {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1;
+  user-select: none;
 }
 
 

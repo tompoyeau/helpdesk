@@ -66,9 +66,12 @@
           Tableau de bord
         </button>
 
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" id="filterActive" checked class="custom-checkbox">
-          <span class="text-xs" style="color:var(--text-muted)">Collaborateurs actifs seulement</span>
+        <label class="toggle-label flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="filterActive" checked class="toggle-input">
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-text">Collaborateurs actifs seulement</span>
         </label>
       </div>
 
