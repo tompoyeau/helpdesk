@@ -126,6 +126,6 @@ dmypy.json
 *~
 .DS_Store
 
-.python/
-setup_tache_plannifiee.ps1
+*python
+setup_tache_planifiee.ps1
 planning.json
