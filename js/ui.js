@@ -8,10 +8,9 @@ if (window.__UI_JS_LOADED__) {
      RÉFÉRENCES DOM
      ============================================================ */
 
-  const plist   = document.getElementById("personList");
-  const clist   = document.getElementById("categoryList");
+  const plist = document.getElementById("personList");
+  const clist = document.getElementById("categoryList");
   const psearch = document.getElementById("personSearch");
-
 
   /* ============================================================
      DÉFINITION DES GROUPES DE CATÉGORIES
@@ -19,12 +18,28 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   const categoryGroups = {
-    "Travail chez le client":  ["Matin", "Midi", "APREM", "Soir"],
-    "Télétravail au domicile": ["TLTDOMMatin", "TLTDOMMidi", "TLTDOMAPREM", "TLTDOMSoir"],
-    "Télétravail à l'agence":  ["TLTMatin", "TLTMidi", "TLTAPREM", "TLTSoir", "ApremRenf"],
-    "Travail à l'agence":      ["ApsideMatin", "ApsideMidi", "ApsideAPREM", "ApsideSoir"],
-    "Projet / Pilote":         ["Pilote", "PiloteBO"],
-    "Autres":                  ["Formation", "Indisponible", "Astreinte", "Récup", "CP"]
+    "Travail chez le client": ["Matin", "Midi", "APREM", "Soir"],
+    "Télétravail au domicile": [
+      "TLTDOMMatin",
+      "TLTDOMMidi",
+      "TLTDOMAPREM",
+      "TLTDOMSoir",
+    ],
+    "Télétravail à l'agence": [
+      "TLTMatin",
+      "TLTMidi",
+      "TLTAPREM",
+      "TLTSoir",
+      "ApremRenf",
+    ],
+    "Travail à l'agence": [
+      "ApsideMatin",
+      "ApsideMidi",
+      "ApsideAPREM",
+      "ApsideSoir",
+    ],
+    "Projet / Pilote": ["Pilote", "PiloteBO"],
+    Autres: ["Formation", "Indisponible", "Astreinte", "Récup", "CP"],
   };
 
   /*
@@ -34,12 +49,11 @@ if (window.__UI_JS_LOADED__) {
    * Clés préfixées CONS_ pour les distinguer des catégories brutes du JSON.
    */
   const consolidatedMap = {
-    "CONS_MATIN": { label: "Matin",  cats: ["Matin", "TLTDOMMatin", "TLTMatin"] },
-    "CONS_MIDI":  { label: "Midi",   cats: ["Midi",  "TLTDOMMidi",  "TLTMidi"]  },
-    "CONS_APREM": { label: "Aprem",  cats: ["APREM", "TLTDOMAPREM", "TLTAPREM"] },
-    "CONS_SOIR":  { label: "Soir",   cats: ["Soir",  "TLTDOMSoir",  "TLTSoir"]  }
+    CONS_MATIN: { label: "Matin", cats: ["Matin", "TLTDOMMatin", "TLTMatin"] },
+    CONS_MIDI: { label: "Midi", cats: ["Midi", "TLTDOMMidi", "TLTMidi"] },
+    CONS_APREM: { label: "Aprem", cats: ["APREM", "TLTDOMAPREM", "TLTAPREM"] },
+    CONS_SOIR: { label: "Soir", cats: ["Soir", "TLTDOMSoir", "TLTSoir"] },
   };
-
 
   /* ============================================================
      INITIALISATION LUCIDE (bibliothèque d'icônes)
@@ -47,14 +61,13 @@ if (window.__UI_JS_LOADED__) {
 
   lucide.createIcons();
 
-
   /* ============================================================
      MODE SOMBRE
      Bascule la classe "dark" sur <html> et met à jour l'icône.
      ============================================================ */
 
   const toggleDark = document.getElementById("toggleDark");
-  const darkIcon   = document.getElementById("darkIcon");
+  const darkIcon = document.getElementById("darkIcon");
 
   function updateDarkIcon() {
     const isDark = document.documentElement.classList.contains("dark");
@@ -69,7 +82,6 @@ if (window.__UI_JS_LOADED__) {
 
   updateDarkIcon();
 
-
   /* ============================================================
      BOUTON REFRESH
      Recalcule les données filtrées et rafraîchit l'interface.
@@ -81,7 +93,6 @@ if (window.__UI_JS_LOADED__) {
     renderGlobal();
   };
 
-
   /* ============================================================
      UTILITAIRE : FORMATAGE DE DATE EN FRANÇAIS
      Exemple : "2026-03-13" → "13 mars 2026"
@@ -89,10 +100,11 @@ if (window.__UI_JS_LOADED__) {
 
   function formatFR(dateStr) {
     return new Date(dateStr).toLocaleDateString("fr-FR", {
-      day: "2-digit", month: "short", year: "numeric"
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
     });
   }
-
 
   /* ============================================================
      RENDER LISTES (sidebar gauche + sidebar droite)
@@ -106,15 +118,20 @@ if (window.__UI_JS_LOADED__) {
   /* --- Sidebar gauche : liste des collaborateurs --- */
   function renderPersonList() {
     plist.innerHTML = applyPersonFilter()
-      .filter(n => n.toLowerCase().includes(psearch.value.toLowerCase()))
-      .map(n => `
-        <li class="sidebar-item" data-name="${n}" onclick="selPerson('${n}')">
-          <div class="flex items-center gap-2">
-            <span>👤</span>
-            <span class="truncate max-w-[140px]">${n}</span>
-          </div>
-        </li>
-      `)
+      .filter((n) => n.toLowerCase().includes(psearch.value.toLowerCase()))
+      .map(
+        (n) => {
+          const initials = n.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+          return `
+          <li class="sidebar-item" data-name="${n}" onclick="selPerson('${n}')">
+            <div class="flex items-center gap-2" style="min-width:0">
+              <div class="person-avatar">${initials}</div>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${n}</span>
+            </div>
+          </li>
+        `;
+        },
+      )
       .join("");
   }
 
@@ -125,47 +142,58 @@ if (window.__UI_JS_LOADED__) {
     // Section "Horaires consolidés" : Matin, Midi, Aprem, Soir + Samedi
     const hasSamedi = filtered.byCategory?.samedi;
     html += `
-      <div class="mb-4">
-        <h4 class="text-xs font-semibold text-slate-700 mb-2">Horaires consolidés</h4>
-        <ul class="space-y-1">
-          ${Object.entries(consolidatedMap).map(([key, obj]) => `
+      <div class="mb-3">
+        <span class="cat-group-title">Horaires consolidés</span>
+        <ul style="margin-top:2px">
+          ${Object.entries(consolidatedMap)
+            .map(
+              ([key, obj]) => `
             <li class="sidebar-item" data-name="${key}" onclick="selCat('${key}')">
               <div class="flex items-center gap-2">
-                <span>⏱</span>
-                <span class="truncate max-w-[120px]">${obj.label}</span>
+                <div class="color-dot" style="background:var(--accent);opacity:0.6"></div>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${obj.label}</span>
               </div>
             </li>
-          `).join("")}
-          ${hasSamedi ? `
+          `,
+            )
+            .join("")}
+          ${
+            hasSamedi
+              ? `
             <li class="sidebar-item" data-name="samedi" onclick="selCat('samedi')">
               <div class="flex items-center gap-2">
-                <span>📅</span>
-                <span class="truncate max-w-[120px]">Samedi</span>
+                <div class="color-dot" style="background:#60A5FA;opacity:0.8"></div>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">Samedi</span>
               </div>
             </li>
-          ` : ""}
+          `
+              : ""
+          }
         </ul>
       </div>
     `;
 
     // Sections par groupe de catégories (ex: "Travail chez le client", "Autres"…)
     for (const group in categoryGroups) {
-      const items = categoryGroups[group].filter(c => categories.includes(c));
+      const items = categoryGroups[group].filter((c) => categories.includes(c));
       if (!items.length) continue;
 
       html += `
-        <div class="mb-4">
-          <h4 class="text-xs font-semibold text-slate-500 mb-2">${group}</h4>
-          <ul class="space-y-1">
-            ${items.map(c => `
+        <div class="mb-3">
+          <span class="cat-group-title">${group}</span>
+          <ul style="margin-top:2px">
+            ${items
+              .map(
+                (c) => `
               <li class="sidebar-item" data-name="${c}" onclick="selCat('${c}')">
                 <div class="flex items-center gap-2">
-                  <span>🎯</span>
-                  <span class="w-3 h-3 rounded-sm" style="background:${colors[c]}"></span>
-                  <span class="truncate max-w-[120px]">${c}</span>
+                  <div class="color-dot" style="background:${colors[c]}"></div>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${c}</span>
                 </div>
               </li>
-            `).join("")}
+            `,
+              )
+              .join("")}
           </ul>
         </div>
       `;
@@ -173,7 +201,6 @@ if (window.__UI_JS_LOADED__) {
 
     clist.innerHTML = html;
   }
-
 
   /* ============================================================
      VUE GLOBALE
@@ -190,7 +217,7 @@ if (window.__UI_JS_LOADED__) {
 
     // Catégories brutes triées par nombre de jours décroissant
     const rows = Object.keys(filtered.byCat)
-      .map(cat => [cat, countDays(cat)])
+      .map((cat) => [cat, countDays(cat)])
       .sort((a, b) => b[1] - a[1]);
 
     // Ajout de la ligne Samedi (catégorie calculée)
@@ -198,9 +225,9 @@ if (window.__UI_JS_LOADED__) {
     if (sam) rows.push(["Samedi", sam.d.size]);
 
     els.center.innerHTML = `
-      <h2 class="font-semibold mb-2">Vue globale</h2>
-      <table class="w-full text-xs border rounded">
-        <thead class="bg-slate-100">
+      <h2>Vue globale</h2>
+      <table class="w-full">
+        <thead>
           <tr>
             <th>Catégorie</th>
             <th>Couleur</th>
@@ -208,18 +235,23 @@ if (window.__UI_JS_LOADED__) {
           </tr>
         </thead>
         <tbody>
-          ${rows.map(([cat, jours]) => `
-            <tr>
+          ${rows
+            .map(
+              ([cat, jours]) => {
+                const catKey = cat === "Samedi" ? "samedi" : cat;
+                const dot = cat === "Samedi"
+                  ? `<span class="color-dot" style="display:inline-block;background:#818CF8"></span>`
+                  : `<span class="color-dot" style="display:inline-block;background:${colors[cat]}"></span>`;
+                return `
+            <tr class="tr-link" onclick="selCat('${catKey}')" title="Voir la catégorie ${cat}">
               <td>${cat}</td>
-              <td>
-                ${cat === "Samedi"
-                  ? `<span class="w-3 h-3 inline-block rounded-sm bg-blue-400"></span>`
-                  : `<span class="w-3 h-3 inline-block rounded-sm" style="background:${colors[cat]}"></span>`
-                }
-              </td>
-              <td class="text-right">${jours}</td>
+              <td>${dot}</td>
+              <td>${jours}</td>
             </tr>
-          `).join("")}
+          `;
+              },
+            )
+            .join("")}
         </tbody>
       </table>
     `;
@@ -230,10 +262,10 @@ if (window.__UI_JS_LOADED__) {
     let count = 0;
     for (const p in filtered.byPerson)
       for (const d in filtered.byPerson[p].details)
-        if (filtered.byPerson[p].details[d].some(e => e.categorie === cat)) count++;
+        if (filtered.byPerson[p].details[d].some((e) => e.categorie === cat))
+          count++;
     return count;
   }
-
 
   /* ============================================================
      VUE PERSONNE
@@ -253,7 +285,7 @@ if (window.__UI_JS_LOADED__) {
     // Agrégation par catégorie brute pour ce collaborateur
     const byCat = {};
     for (const day in d.details)
-      d.details[day].forEach(e => {
+      d.details[day].forEach((e) => {
         byCat[e.categorie] = byCat[e.categorie] || new Set();
         byCat[e.categorie].add(day);
       });
@@ -265,29 +297,35 @@ if (window.__UI_JS_LOADED__) {
     const days = Object.keys(d.details).sort().reverse();
 
     els.center.innerHTML = `
-      <h2 class="font-semibold mb-2">${n}</h2>
+      <h2>${n}</h2>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
 
         <!-- Tableau par catégorie brute -->
         <div>
-          <table class="w-full text-xs border rounded">
-            <thead class="bg-slate-100">
+          <table class="w-full">
+            <thead>
               <tr>
                 <th>Catégorie</th>
-                <th class="text-right">Jours</th>
+                <th>Jours</th>
               </tr>
             </thead>
             <tbody>
-              ${rows.map(([cat, jours]) => `
-                <tr>
+              ${rows
+                .map(
+                  ([cat, jours]) => `
+                <tr class="tr-link" onclick="selCat('${cat}')" title="Voir la catégorie ${cat}">
                   <td>
-                    <span class="w-3 h-3 inline-block rounded-sm mr-1" style="background:${colors[cat]}"></span>
-                    ${cat}
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <span class="color-dot" style="display:inline-block;background:${colors[cat]}"></span>
+                      ${cat}
+                    </div>
                   </td>
-                  <td class="text-right">${jours}</td>
+                  <td>${jours}</td>
                 </tr>
-              `).join("")}
+              `,
+                )
+                .join("")}
             </tbody>
           </table>
         </div>
@@ -300,22 +338,24 @@ if (window.__UI_JS_LOADED__) {
       </div>
 
       <!-- Détail chronologique -->
-      <h3 class="font-semibold mb-2">Détails</h3>
-      <table class="w-full text-xs border rounded">
-        <thead class="bg-slate-100">
+      <h3>Détails</h3>
+      <table class="w-full">
+        <thead>
           <tr><th>Date</th><th>Catégorie</th><th>Horaires</th></tr>
         </thead>
         <tbody>
-          ${days.map(day => {
-            const entries = d.details[day];
-            return `
+          ${days
+            .map((day) => {
+              const entries = d.details[day];
+              return `
               <tr>
-                <td>${formatFR(day)}</td>
-                <td>${[...new Set(entries.map(x => x.categorie))].join(", ")}</td>
-                <td>${entries.map(x => x.horaire).join(", ")}</td>
+                <td style="font-family:var(--font-mono);font-size:11px">${formatFR(day)}</td>
+                <td>${[...new Set(entries.map((x) => x.categorie))].join(", ")}</td>
+                <td style="font-family:var(--font-mono);font-size:11px">${entries.map((x) => x.horaire).join(", ")}</td>
               </tr>
             `;
-          }).join("")}
+            })
+            .join("")}
         </tbody>
       </table>
     `;
@@ -331,9 +371,11 @@ if (window.__UI_JS_LOADED__) {
     const rows = Object.entries(consolidatedMap).map(([, obj]) => {
       let days = 0;
       for (const day in d.details) {
-        const count = d.details[day].filter(e => obj.cats.includes(e.categorie)).length;
+        const count = d.details[day].filter((e) =>
+          obj.cats.includes(e.categorie),
+        ).length;
         if (count === 1) days += 0.5; // Demi-journée (un seul créneau)
-        if (count >= 2) days += 1;    // Journée complète (deux créneaux ou plus)
+        if (count >= 2) days += 1; // Journée complète (deux créneaux ou plus)
       }
       return { label: obj.label, days };
     });
@@ -343,25 +385,28 @@ if (window.__UI_JS_LOADED__) {
     if (sam) rows.push({ label: "Samedi", days: sam.days.size });
 
     return `
-      <table class="w-full text-xs border rounded">
-        <thead class="bg-slate-100">
+      <table class="w-full">
+        <thead>
           <tr>
             <th>Horaire</th>
-            <th class="text-right">Jours</th>
+            <th>Jours</th>
           </tr>
         </thead>
         <tbody>
-          ${rows.map(r => `
+          ${rows
+            .map(
+              (r) => `
             <tr>
               <td>${r.label}</td>
-              <td class="text-right">${Number.isInteger(r.days) ? r.days : r.days.toFixed(1)}</td>
+              <td>${Number.isInteger(r.days) ? r.days : r.days.toFixed(1)}</td>
             </tr>
-          `).join("")}
+          `,
+            )
+            .join("")}
         </tbody>
       </table>
     `;
   }
-
 
   /* ============================================================
      VUE CATÉGORIE CONSOLIDÉE
@@ -377,7 +422,9 @@ if (window.__UI_JS_LOADED__) {
     for (const p in filtered.byPerson) {
       let days = 0;
       for (const day in filtered.byPerson[p].details) {
-        const count = filtered.byPerson[p].details[day].filter(e => cats.includes(e.categorie)).length;
+        const count = filtered.byPerson[p].details[day].filter((e) =>
+          cats.includes(e.categorie),
+        ).length;
         if (count === 1) days += 0.5;
         if (count >= 2) days += 1;
       }
@@ -387,28 +434,31 @@ if (window.__UI_JS_LOADED__) {
     arr.sort((a, b) => b[1] - a[1]);
 
     els.center.innerHTML = `
-      <h2 class="font-semibold mb-2">${consolidatedMap[key].label}</h2>
-      <table class="w-full text-xs border rounded">
-        <thead class="bg-slate-100">
+      <h2>${consolidatedMap[key].label}</h2>
+      <table class="w-full">
+        <thead>
           <tr>
             <th>#</th>
             <th>Personne</th>
-            <th class="text-right">Jours</th>
+            <th>Jours</th>
           </tr>
         </thead>
         <tbody>
-          ${arr.map(([p, days], i) => `
-            <tr>
-              <td>${i + 1}</td>
+          ${arr
+            .map(
+              ([p, days], i) => `
+            <tr class="tr-link" onclick="selPerson('${p}')" title="Voir ${p}">
+              <td class="rank-cell">${i + 1}</td>
               <td>${p}</td>
-              <td class="text-right">${Number.isInteger(days) ? days : days.toFixed(1)}</td>
+              <td>${Number.isInteger(days) ? days : days.toFixed(1)}</td>
             </tr>
-          `).join("")}
+          `,
+            )
+            .join("")}
         </tbody>
       </table>
     `;
   }
-
 
   /* ============================================================
      VUE CATÉGORIE SPÉCIALE : SAMEDI
@@ -430,28 +480,31 @@ if (window.__UI_JS_LOADED__) {
       .sort((a, b) => b[1] - a[1]);
 
     els.center.innerHTML = `
-      <h2 class="font-semibold mb-2">📅 Samedis travaillés (hors astreinte)</h2>
-      <table class="w-full text-xs border rounded">
-        <thead class="bg-slate-100">
+      <h2>Samedis travaillés</h2>
+      <table class="w-full">
+        <thead>
           <tr>
             <th>#</th>
             <th>Personne</th>
-            <th class="text-right">Jours</th>
+            <th>Jours</th>
           </tr>
         </thead>
         <tbody>
-          ${arr.map(([p, jours], i) => `
-            <tr>
-              <td>${i + 1}</td>
+          ${arr
+            .map(
+              ([p, jours], i) => `
+            <tr class="tr-link" onclick="selPerson('${p}')" title="Voir ${p}">
+              <td class="rank-cell">${i + 1}</td>
               <td>${p}</td>
-              <td class="text-right">${jours}</td>
+              <td>${jours}</td>
             </tr>
-          `).join("")}
+          `,
+            )
+            .join("")}
         </tbody>
       </table>
     `;
   }
-
 
   /* ============================================================
      VUE CATÉGORIE NORMALE
@@ -471,7 +524,7 @@ if (window.__UI_JS_LOADED__) {
     for (const p in filtered.byPerson) {
       const days = new Set();
       for (const day in filtered.byPerson[p].details)
-        filtered.byPerson[p].details[day].forEach(e => {
+        filtered.byPerson[p].details[day].forEach((e) => {
           if (e.categorie === cat) days.add(day);
         });
       if (days.size > 0) arr.push([p, days.size]);
@@ -480,28 +533,35 @@ if (window.__UI_JS_LOADED__) {
     arr.sort((a, b) => b[1] - a[1]);
 
     els.center.innerHTML = `
-      <h2 class="font-semibold mb-2">${cat}</h2>
-      <table class="w-full text-xs border rounded">
-        <thead class="bg-slate-100">
+      <h2>
+        <span style="display:inline-flex;align-items:center;gap:8px">
+          <span class="color-dot" style="background:${colors[cat]}"></span>${cat}
+        </span>
+      </h2>
+      <table class="w-full">
+        <thead>
           <tr>
             <th>#</th>
             <th>Personne</th>
-            <th class="text-right">Jours</th>
+            <th>Jours</th>
           </tr>
         </thead>
         <tbody>
-          ${arr.map(([p, jours], i) => `
-            <tr>
-              <td>${i + 1}</td>
+          ${arr
+            .map(
+              ([p, jours], i) => `
+            <tr class="tr-link" onclick="selPerson('${p}')" title="Voir ${p}">
+              <td class="rank-cell">${i + 1}</td>
               <td>${p}</td>
-              <td class="text-right">${jours}</td>
+              <td>${jours}</td>
             </tr>
-          `).join("")}
+          `,
+            )
+            .join("")}
         </tbody>
       </table>
     `;
   }
-
 
   /* ============================================================
      HIGHLIGHT SIDEBAR
@@ -509,12 +569,72 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   function highlight(type, name) {
-    document.querySelectorAll(`#${type}List .sidebar-item`)
-      .forEach(el => el.classList.remove("active"));
+    document
+      .querySelectorAll(`#${type}List .sidebar-item`)
+      .forEach((el) => el.classList.remove("active"));
 
-    document.querySelector(`#${type}List .sidebar-item[data-name="${name}"]`)
+    document
+      .querySelector(`#${type}List .sidebar-item[data-name="${name}"]`)
       ?.classList.add("active");
   }
+
+  /* ============================================================
+     NAVIGATION — HISTORIQUE SPA
+     Chaque vue est poussée dans history.pushState.
+     Le bouton ← natif du navigateur ET un bouton custom
+     dans l'interface permettent de revenir en arrière.
+     ============================================================ */
+
+  /**
+   * Navigue vers un état et le pousse dans l'historique.
+   * @param {Object} state  ex: { view:'person', name:'Dupont' }
+   * @param {boolean} replace  true = replaceState (pas de nouvel entrée)
+   */
+  function navigate(state, replace = false) {
+    if (replace) {
+      history.replaceState(state, "");
+    } else {
+      history.pushState(state, "");
+    }
+    renderState(state);
+  }
+
+  /** Restaure une vue à partir d'un objet state. */
+  function renderState(state) {
+    if (!state) { renderGlobal(); updateCharts(); return; }
+
+    switch (state.view) {
+      case "global":
+        document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+        renderGlobal();
+        updateCharts();
+        break;
+      case "person":
+        document.querySelectorAll("#categoryList .sidebar-item").forEach(el => el.classList.remove("active"));
+        renderPerson(state.name);
+        highlight("person", state.name);
+        break;
+      case "cat":
+        document.querySelectorAll("#personList .sidebar-item").forEach(el => el.classList.remove("active"));
+        if (consolidatedMap[state.name]) {
+          renderConsolidatedCategory(state.name, consolidatedMap[state.name].cats);
+        } else if (state.name === "samedi") {
+          renderSamediCategory();
+        } else {
+          computeFiltered();
+          renderCategory(state.name);
+          updateCharts();
+        }
+        highlight("category", state.name);
+        break;
+    }
+  }
+
+  // Écoute le bouton ← natif du navigateur
+  window.addEventListener("popstate", (e) => {
+    computeFiltered();
+    renderState(e.state);
+  });
 
 
   /* ============================================================
@@ -522,15 +642,8 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   function selPerson(n) {
-    document.querySelectorAll("#categoryList .sidebar-item")
-      .forEach(el => el.classList.remove("active"));
-
-    computeFiltered();
-    renderPerson(n);
-    updateCharts();
-    highlight("person", n);
+    navigate({ view: "person", name: n });
   }
-
 
   /* ============================================================
      ACTIONS : SÉLECTION D'UNE CATÉGORIE
@@ -538,30 +651,8 @@ if (window.__UI_JS_LOADED__) {
      ============================================================ */
 
   function selCat(c) {
-    document.querySelectorAll("#personList .sidebar-item")
-      .forEach(el => el.classList.remove("active"));
-
-    // Horaire consolidé (CONS_MATIN, CONS_MIDI…)
-    if (consolidatedMap[c]) {
-      renderConsolidatedCategory(c, consolidatedMap[c].cats);
-      highlight("category", c);
-      return;
-    }
-
-    // Catégorie spéciale : Samedi (calculée, absente du JSON)
-    if (c === "samedi") {
-      renderSamediCategory();
-      highlight("category", c);
-      return;
-    }
-
-    // Catégorie brute du JSON
-    computeFiltered();
-    renderCategory(c);
-    updateCharts();
-    highlight("category", c);
+    navigate({ view: "cat", name: c });
   }
-
 
   /* ============================================================
      INTERACTIONS
@@ -572,16 +663,24 @@ if (window.__UI_JS_LOADED__) {
 
   // Bouton "Tableau de bord" : retour à la vue globale
   document.getElementById("viewGlobal").onclick = () => {
-    computeFiltered();
-    renderGlobal();
-    updateCharts();
+    navigate({ view: "global" });
   };
 
   // Checkbox "Afficher uniquement les FO actuels"
   document.getElementById("filterActive").onchange = () => {
     computeFiltered();
     renderLists();
-    renderGlobal();
+    navigate({ view: "global" });
   };
+
+  // Bouton refresh : recalcule et reste sur la vue courante
+  document.getElementById("refresh").onclick = () => {
+    computeFiltered();
+    renderLists();
+    renderState(history.state);
+  };
+
+  // État initial : remplace le state vide par "global"
+  navigate({ view: "global" }, true);
 
 } // fin du guard
