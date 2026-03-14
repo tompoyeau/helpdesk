@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Planning – Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,8 +17,14 @@
 <body class="h-screen flex flex-col">
 
   <!-- HEADER -->
-  <header class="app-header flex items-center justify-between px-5 py-0" style="height:52px">
+  <header class="app-header flex items-center justify-between px-4 py-0" style="height:52px;flex-shrink:0">
+
     <div class="flex items-center gap-3">
+      <!-- Burger mobile (gauche) -->
+      <button id="btnOpenLeft" class="btn-icon mobile-only" title="Collaborateurs">
+        <i data-lucide="users" style="width:15px;height:15px;"></i>
+      </button>
+
       <div class="app-logo">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
@@ -26,41 +33,64 @@
           <rect x="11" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
         </svg>
       </div>
-      <div>
+      <div class="header-title-block">
         <h1 class="text-sm font-semibold tracking-tight leading-tight">Planning Dashboard</h1>
-        <p class="text-xs leading-tight" style="color:var(--text-muted)">Pilotage de l'activité</p>
+        <p class="text-xs leading-tight hide-xs" style="color:rgba(255,255,255,0.4)">Pilotage de l'activité</p>
       </div>
     </div>
 
     <div class="flex items-center gap-2">
-      <div class="date-range-group">
+      <!-- Date range (masqué sur mobile, visible via sheet) -->
+      <div class="date-range-group desktop-only">
         <span class="date-label">Du</span>
         <input type="date" id="filterStart" class="date-input">
         <span class="date-label">au</span>
         <input type="date" id="filterEnd" class="date-input">
       </div>
 
-      <button id="refresh" class="btn-primary">
+      <button id="refresh" class="btn-primary desktop-only">
         <i data-lucide="refresh-cw" style="width:12px;height:12px;"></i>
         Appliquer
       </button>
 
-      <div style="width:1px;height:20px;background:var(--border);margin:0 4px;"></div>
+      <!-- Bouton filtre date mobile -->
+      <button id="btnDateSheet" class="btn-icon mobile-only" title="Filtrer par date">
+        <i data-lucide="calendar" style="width:15px;height:15px;"></i>
+      </button>
 
-      <button id="toggleDark" class="btn-icon" title="Basculer le mode sombre">
+      <div class="header-sep desktop-only"></div>
+
+      <button id="toggleDark" class="btn-icon" title="Mode sombre">
         <i id="darkIcon" data-lucide="moon" style="width:15px;height:15px;"></i>
+      </button>
+
+      <!-- Catégories (mobile) -->
+      <button id="btnOpenRight" class="btn-icon mobile-only" title="Catégories">
+        <i data-lucide="tag" style="width:15px;height:15px;"></i>
       </button>
     </div>
   </header>
 
 
-  <!-- LAYOUT 3 COLONNES -->
-  <div class="flex-1 grid overflow-hidden" style="grid-template-columns:240px 1fr 220px">
+  <!-- BACKDROP drawers -->
+  <div id="drawerBackdrop" class="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
-    <!-- COLLABORATEURS -->
-    <aside class="app-sidebar flex flex-col min-h-0" style="border-right:1px solid var(--border)">
 
-      <div class="p-3" style="border-bottom:1px solid var(--border); space-y:10px">
+  <!-- LAYOUT -->
+  <div class="layout-body">
+
+    <!-- DRAWER GAUCHE — Collaborateurs -->
+    <aside id="sidebarLeft" class="app-sidebar sidebar-left flex flex-col min-h-0">
+
+      <!-- En-tête drawer mobile -->
+      <div class="drawer-header desktop-only-none">
+        <span class="drawer-title">Collaborateurs</span>
+        <button class="btn-icon btn-icon-sm" onclick="closeAllDrawers()">
+          <i data-lucide="x" style="width:14px;height:14px;"></i>
+        </button>
+      </div>
+
+      <div class="p-3" style="border-bottom:1px solid var(--border)">
         <button id="viewGlobal" class="btn-dashboard w-full mb-2.5">
           <i data-lucide="layout-dashboard" style="width:13px;height:13px;"></i>
           Tableau de bord
@@ -68,17 +98,15 @@
 
         <label class="toggle-label flex items-center gap-2 cursor-pointer">
           <input type="checkbox" id="filterActive" checked class="toggle-input">
-          <span class="toggle-track">
-            <span class="toggle-thumb"></span>
-          </span>
-          <span class="toggle-text">Collaborateurs actifs seulement</span>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-text">Actifs seulement</span>
         </label>
       </div>
 
       <div class="px-3 py-2" style="border-bottom:1px solid var(--border)">
         <div class="search-wrapper">
           <i data-lucide="search" class="search-icon" style="width:12px;height:12px;"></i>
-          <input id="personSearch" placeholder="Rechercher un collaborateur…" class="search-input">
+          <input id="personSearch" placeholder="Rechercher…" class="search-input">
         </div>
       </div>
 
@@ -93,12 +121,11 @@
     </aside>
 
     <!-- CONTENU CENTRAL -->
-    <main class="flex flex-col overflow-hidden min-h-0" style="background:var(--bg-surface)">
+    <main class="layout-main flex flex-col overflow-hidden min-h-0" style="background:var(--bg-surface)">
 
       <!-- CHARTS -->
       <section>
-        <div id="chartsBlock" class="grid charts-container" style="grid-template-columns:1fr 1fr">
-        </div>
+        <div id="chartsBlock" class="grid charts-container" style="grid-template-columns:1fr 1fr"></div>
       </section>
 
       <!-- DETAILS -->
@@ -108,8 +135,17 @@
 
     </main>
 
-    <!-- CATÉGORIES -->
-    <aside class="app-sidebar flex flex-col min-h-0" style="border-left:1px solid var(--border)">
+    <!-- DRAWER DROIT — Catégories -->
+    <aside id="sidebarRight" class="app-sidebar sidebar-right flex flex-col min-h-0">
+
+      <!-- En-tête drawer mobile -->
+      <div class="drawer-header desktop-only-none">
+        <span class="drawer-title">Catégories</span>
+        <button class="btn-icon btn-icon-sm" onclick="closeAllDrawers()">
+          <i data-lucide="x" style="width:14px;height:14px;"></i>
+        </button>
+      </div>
+
       <div class="px-3 pt-3 pb-1">
         <span class="sidebar-section-label">Catégories</span>
       </div>
@@ -119,6 +155,25 @@
     </aside>
 
   </div>
+
+
+  <!-- BOTTOM SHEET — Filtres date (mobile) -->
+  <div id="dateSheet" class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <h3 class="bottom-sheet-title">Filtrer par période</h3>
+    <div class="bottom-sheet-body">
+      <label class="sheet-label">Date de début</label>
+      <input type="date" id="filterStartMobile" class="sheet-date-input">
+      <label class="sheet-label" style="margin-top:12px">Date de fin</label>
+      <input type="date" id="filterEndMobile" class="sheet-date-input">
+      <button id="refreshMobile" class="login-btn" style="margin-top:16px">
+        <i data-lucide="refresh-cw" style="width:13px;height:13px;display:inline;margin-right:6px"></i>
+        Appliquer
+      </button>
+    </div>
+  </div>
+  <div id="sheetBackdrop" class="drawer-backdrop" onclick="closeDateSheet()"></div>
+
 
   <!-- OVERLAY DE LOGIN -->
   <div id="loginOverlay">
@@ -133,27 +188,16 @@
       </div>
       <h2 class="login-title">Planning Dashboard</h2>
       <p class="login-subtitle">Accès restreint — entrez le mot de passe pour continuer</p>
-
       <form id="loginForm">
         <div class="login-field">
           <i data-lucide="lock" class="login-field-icon" style="width:14px;height:14px"></i>
-          <input
-            id="loginPassword"
-            type="password"
-            placeholder="Mot de passe"
-            class="login-input"
-            autocomplete="current-password"
-          >
+          <input id="loginPassword" type="password" placeholder="Mot de passe" class="login-input" autocomplete="current-password">
         </div>
-
         <p id="loginError" class="login-error" style="display:none">
           <i data-lucide="alert-circle" style="width:13px;height:13px;flex-shrink:0"></i>
           Mot de passe incorrect
         </p>
-
-        <button id="loginBtn" type="submit" class="login-btn">
-          Accéder
-        </button>
+        <button id="loginBtn" type="submit" class="login-btn">Accéder</button>
       </form>
     </div>
   </div>

@@ -56,15 +56,72 @@ if (window.__UI_JS_LOADED__) {
   };
 
   /* ============================================================
+     RESPONSIVE — DRAWERS & BOTTOM SHEET
+     ============================================================ */
+
+  function openDrawer(side) {
+    const el  = document.getElementById(side === "left" ? "sidebarLeft" : "sidebarRight");
+    const bck = document.getElementById("drawerBackdrop");
+    el.classList.add("open");
+    bck.classList.add("open");
+    // Recrée les icônes Lucide dans le drawer
+    lucide.createIcons();
+  }
+
+  function closeAllDrawers() {
+    document.getElementById("sidebarLeft").classList.remove("open");
+    document.getElementById("sidebarRight").classList.remove("open");
+    document.getElementById("drawerBackdrop").classList.remove("open");
+  }
+
+  function openDateSheet() {
+    // Synchronise les valeurs du sheet avec les inputs desktop
+    document.getElementById("filterStartMobile").value = els.fs.value;
+    document.getElementById("filterEndMobile").value   = els.fe.value;
+    document.getElementById("dateSheet").classList.add("open");
+    document.getElementById("sheetBackdrop").classList.add("open");
+  }
+
+  function closeDateSheet() {
+    document.getElementById("dateSheet").classList.remove("open");
+    document.getElementById("sheetBackdrop").classList.remove("open");
+  }
+
+  // Boutons header mobile
+  document.getElementById("btnOpenLeft").onclick  = () => openDrawer("left");
+  document.getElementById("btnOpenRight").onclick = () => openDrawer("right");
+  document.getElementById("btnDateSheet").onclick = openDateSheet;
+
+  // Bouton Appliquer du sheet mobile → sync vers inputs desktop puis refresh
+  document.getElementById("refreshMobile").onclick = () => {
+    els.fs.value = document.getElementById("filterStartMobile").value;
+    els.fe.value = document.getElementById("filterEndMobile").value;
+    closeDateSheet();
+    computeFiltered();
+    renderLists();
+    renderState(history.state);
+  };
+
+  // Fermer drawers avec la touche Échap
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closeAllDrawers(); closeDateSheet(); }
+  });
+
+  // Fermer les drawers automatiquement après sélection sur mobile
+  const origSelPerson = window.selPerson;
+  window.selPerson = (n) => { closeAllDrawers(); navigate({ view: "person", name: n }); };
+  const origSelCat = window.selCat;
+  window.selCat = (c) => { closeAllDrawers(); navigate({ view: "cat", name: c }); };
+
+  // Exposer les fonctions drawer globalement (appelées depuis onclick HTML)
+  window.closeAllDrawers = closeAllDrawers;
+  window.closeDateSheet  = closeDateSheet;
+
+  /* ============================================================
      INITIALISATION LUCIDE (bibliothèque d'icônes)
      ============================================================ */
 
   lucide.createIcons();
-
-  /* ============================================================
-     MODE SOMBRE
-     Bascule la classe "dark" sur <html> et met à jour l'icône.
-     ============================================================ */
 
   const toggleDark = document.getElementById("toggleDark");
   const darkIcon = document.getElementById("darkIcon");
