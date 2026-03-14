@@ -225,13 +225,34 @@ function applyPersonFilter() {
 }
 
 function detectActivePersons() {
-  // Collaborateurs ayant une entrée dans le planning aujourd'hui.
-  const today   = new Date().toISOString().slice(0, 10);
+  // Si on est samedi (6) ou dimanche (0), on cherche le vendredi de la semaine courante
+  // pour ne pas retourner une liste vide les week-ends.
+  const ref     = new Date();
+  const day     = ref.getDay(); // 0=dim, 6=sam
+  if (day === 0) ref.setDate(ref.getDate() - 2); // dimanche → vendredi
+  if (day === 6) ref.setDate(ref.getDate() - 1); // samedi   → vendredi
+
+  const dateRef = ref.toISOString().slice(0, 10);
   const actives = new Set();
 
   for (const p in planning)
-    if (planning[p][today]?.length > 0)
+    if (planning[p][dateRef]?.length > 0)
       actives.add(p);
+
+  // Si le vendredi est aussi vide (jour férié, etc.), on remonte
+  // jusqu'à trouver un jour avec des données (max 14 jours en arrière)
+  if (actives.size === 0) {
+    for (let i = 1; i <= 14; i++) {
+      const d = new Date(ref);
+      d.setDate(d.getDate() - i);
+      if (d.getDay() === 0 || d.getDay() === 6) continue; // ignore week-ends
+      const iso = d.toISOString().slice(0, 10);
+      for (const p in planning)
+        if (planning[p][iso]?.length > 0)
+          actives.add(p);
+      if (actives.size > 0) break;
+    }
+  }
 
   return [...actives].sort();
 }
