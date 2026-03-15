@@ -271,46 +271,14 @@ if (window.__UI_JS_LOADED__) {
       return;
     }
 
-    // Catégories brutes triées par nombre de jours décroissant
     const rows = Object.keys(filtered.byCat)
       .map((cat) => [cat, countDays(cat)])
       .sort((a, b) => b[1] - a[1]);
 
-    // Ajout de la ligne Samedi (catégorie calculée)
     const sam = filtered.byCategory?.samedi;
     if (sam) rows.push(["Samedi", sam.d.size]);
 
-    els.center.innerHTML = `
-      <h2>Vue globale</h2>
-      <table class="w-full">
-        <thead>
-          <tr>
-            <th>Catégorie</th>
-            <th>Couleur</th>
-            <th class="text-right">Jours</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows
-            .map(
-              ([cat, jours]) => {
-                const catKey = cat === "Samedi" ? "samedi" : cat;
-                const dot = cat === "Samedi"
-                  ? `<span class="color-dot" style="display:inline-block;background:#818CF8"></span>`
-                  : `<span class="color-dot" style="display:inline-block;background:${colors[cat]}"></span>`;
-                return `
-            <tr class="tr-link" onclick="selCat('${catKey}')" title="Voir la catégorie ${cat}">
-              <td>${cat}</td>
-              <td>${dot}</td>
-              <td>${jours}</td>
-            </tr>
-          `;
-              },
-            )
-            .join("")}
-        </tbody>
-      </table>
-    `;
+    els.center.innerHTML = getDashboardHTML(rows, colors);
   }
 
   /* Compte le nombre de jours distincts où une catégorie apparaît */
@@ -338,7 +306,7 @@ if (window.__UI_JS_LOADED__) {
 
     const d = filtered.byPerson[n];
 
-    // Agrégation par catégorie brute pour ce collaborateur
+    // Agrégation par catégorie brute
     const byCat = {};
     for (const day in d.details)
       d.details[day].forEach((e) => {
@@ -352,24 +320,75 @@ if (window.__UI_JS_LOADED__) {
 
     const days = Object.keys(d.details).sort().reverse();
 
+    // --- Calcul des stats ---
+    const TLT_CATS  = new Set(["TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir","TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"]);
+    const CLI_CATS  = new Set(["Matin","Midi","APREM","Soir","Formation"]); // Formation = chez le client
+    const ABS_CATS  = new Set(["CP","Indisponible","Récup"]);
+    const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, "ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir","Pilote","PiloteBO","Astreinte"]);
+
+    let workDays = 0, tltDays = 0, clientDays = 0, absDays = 0;
+
+    for (const day in d.details) {
+      const entries = d.details[day];
+      const hasWork   = entries.some(e => WORK_CATS.has(e.categorie));
+      const hasTlt    = entries.some(e => TLT_CATS.has(e.categorie));
+      const hasClient = entries.some(e => CLI_CATS.has(e.categorie));
+      const hasAbs    = entries.some(e => ABS_CATS.has(e.categorie));
+      if (hasWork)            workDays++;
+      if (hasTlt)             tltDays++;
+      if (hasClient)          clientDays++;
+      if (hasAbs && !hasWork) absDays++;
+    }
+
+    const tauxTlt    = workDays > 0 ? Math.round(tltDays / workDays * 100) : 0;
+    const tauxClient = workDays > 0 ? Math.round(clientDays / workDays * 100) : 0;
+    const firstDay   = days[days.length - 1];
+    const lastDay    = days[0];
+
+    const tltColor = tauxTlt >= 50 ? "#22D3EE" : tauxTlt >= 30 ? "#A78BFA" : "#6366F1";
+
+    const statCards = [
+      { label: "Jours travaillés", value: workDays,         sub: `${firstDay ? formatFR(firstDay) : "—"} → ${lastDay ? formatFR(lastDay) : "—"}`, color: "#6366F1", icon: `<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>` },
+      { label: "Taux TLT",         value: tauxTlt + "%",    sub: `${tltDays}j en télétravail`,       color: tltColor,   icon: `<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>` },
+      { label: "Taux client",      value: tauxClient + "%", sub: `${clientDays}j chez le client`,    color: "#34D399",  icon: `<path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>` },
+      { label: "Absences",         value: absDays,          sub: `CP, Indispo, Récup`,               color: "#94A3B8",  icon: `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>` },
+    ];
+
+    const statsHTML = `
+      <div class="person-stats-grid">
+        ${statCards.map(s => `
+          <div class="person-stat-card">
+            <div class="person-stat-icon" style="background:${s.color}18">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${s.icon}</svg>
+            </div>
+            <div class="person-stat-body">
+              <span class="person-stat-label">${s.label}</span>
+              <span class="person-stat-value" style="color:${s.color}">${s.value}</span>
+              <span class="person-stat-sub">${s.sub}</span>
+            </div>
+          </div>`).join("")}
+      </div>`;
+
+    const initials = n.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+
     els.center.innerHTML = `
-      <h2>${n}</h2>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-
-        <!-- Tableau par catégorie brute -->
+      <div class="person-header">
+        <div class="person-avatar-lg">${initials}</div>
         <div>
+          <h2 style="margin-bottom:2px">${n}</h2>
+          <span class="person-period">${workDays} jours · ${days.length > 0 ? formatFR(firstDay) + " → " + formatFR(lastDay) : "—"}</span>
+        </div>
+      </div>
+
+      ${statsHTML}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" style="margin-top:20px">
+        <div>
+          <h3>Par catégorie</h3>
           <table class="w-full">
-            <thead>
-              <tr>
-                <th>Catégorie</th>
-                <th>Jours</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Catégorie</th><th>Jours</th></tr></thead>
             <tbody>
-              ${rows
-                .map(
-                  ([cat, jours]) => `
+              ${rows.map(([cat, jours]) => `
                 <tr class="tr-link" onclick="selCat('${cat}')" title="Voir la catégorie ${cat}">
                   <td>
                     <div style="display:flex;align-items:center;gap:7px">
@@ -378,90 +397,188 @@ if (window.__UI_JS_LOADED__) {
                     </div>
                   </td>
                   <td>${jours}</td>
-                </tr>
-              `,
-                )
-                .join("")}
+                </tr>`).join("")}
             </tbody>
           </table>
         </div>
-
-        <!-- Tableau consolidé (Matin/Midi/Aprem/Soir/Samedi) -->
         <div>
+          <h3>Répartition par horaire</h3>
           ${renderPersonConsolidated(n)}
         </div>
-
       </div>
 
-      <!-- Détail chronologique -->
-      <h3>Détails</h3>
-      <table class="w-full">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:10px">
+        <h3 style="margin:0">Détails</h3>
+      </div>
+
+      <div class="details-filter-bar">
+
+        <!-- Chips horaires consolidés -->
+        <div class="detail-chips" id="detailChips">
+          ${[
+            { key: "matin",  label: "Matin",  cats: ["matin","tltdommatin","tltmatin"] },
+            { key: "midi",   label: "Midi",   cats: ["midi","tltdommidi","tltmidi"] },
+            { key: "aprem",  label: "Aprem",  cats: ["aprem","tltdomaprem","tltaprem"] },
+            { key: "soir",   label: "Soir",   cats: ["soir","tltdomsoir","tltsoir"] },
+            { key: "samedi", label: "Samedi", cats: ["samedi"] },
+          ].map(h => `<button class="detail-chip" data-chip="${h.key}" data-cats='${JSON.stringify(h.cats)}' onclick="toggleDetailChip(this)">${h.label}</button>`).join("")}
+        </div>
+
+        <!-- Select autres catégories (hors horaires consolidés) -->
+        <select id="detailCatFilter" class="detail-select" onchange="filterDetails()">
+          <option value="">Toutes catégories</option>
+          ${[...new Set(days.flatMap(day => d.details[day].map(e => e.categorie)))]
+            .filter(cat => !["Matin","Midi","APREM","Soir","TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir","TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"].includes(cat))
+            .sort()
+            .map(cat => `<option value="${cat}">${cat}</option>`).join("")}
+        </select>
+
+        <select id="detailMonthFilter" class="detail-select" onchange="filterDetails()">
+          <option value="">Tous les mois</option>
+          ${[...new Set(days.map(day => day.slice(0,7)))].sort().reverse()
+            .map(m => {
+              const label = new Date(m + "-01").toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+              return `<option value="${m}">${label}</option>`;
+            }).join("")}
+        </select>
+
+        <span id="detailCount" class="detail-count">${days.length} entrées</span>
+      </div>
+
+      <table class="w-full" id="detailTable">
         <thead>
           <tr><th>Date</th><th>Catégorie</th><th>Horaires</th></tr>
         </thead>
-        <tbody>
-          ${days
-            .map((day) => {
-              const entries = d.details[day];
-              return `
-              <tr>
-                <td style="font-family:var(--font-mono);font-size:11px">${formatFR(day)}</td>
-                <td>${[...new Set(entries.map((x) => x.categorie))].join(", ")}</td>
-                <td style="font-family:var(--font-mono);font-size:11px">${entries.map((x) => x.horaire).join(", ")}</td>
-              </tr>
-            `;
-            })
-            .join("")}
+        <tbody id="detailBody">
+          ${days.map((day) => {
+            const entries = d.details[day];
+            const cats    = [...new Set(entries.map(x => x.categorie))].join(", ");
+            const horaires = entries.map(x => x.horaire).join(", ");
+            return `
+              <tr data-date="${day}" data-cats="${cats.toLowerCase()}" data-month="${day.slice(0,7)}">
+                <td style="font-family:var(--font-mono);font-size:11px">${new Date(day).toLocaleDateString("fr-FR", { weekday:"short" }).replace(".","")}&nbsp;· ${formatFR(day)}</td>
+                <td>${cats}</td>
+                <td style="font-family:var(--font-mono);font-size:11px">${horaires}</td>
+              </tr>`;
+          }).join("")}
         </tbody>
       </table>
     `;
+
+    lucide.createIcons();
   }
 
-  /* Génère le tableau consolidé (Matin/Midi/Aprem/Soir + Samedi) pour un collaborateur */
+  /* Génère la répartition TLT / Client / TLT Agence par horaire */
   function renderPersonConsolidated(n) {
     if (!filtered?.byPerson[n]) return "";
 
     const d = filtered.byPerson[n];
 
-    // Calcul des jours par horaire consolidé
-    const rows = Object.entries(consolidatedMap).map(([, obj]) => {
-      let days = 0;
+    const HORAIRES = [
+      {
+        label: "Matin",
+        slots: {
+          "Client":       ["Matin"],
+          "TLT Domicile": ["TLTDOMMatin"],
+          "TLT Agence":   ["TLTMatin"],
+        },
+        colors: { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" }
+      },
+      {
+        label: "Midi",
+        slots: {
+          "Client":       ["Midi"],
+          "TLT Domicile": ["TLTDOMMidi"],
+          "TLT Agence":   ["TLTMidi"],
+        },
+        colors: { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" }
+      },
+      {
+        label: "Aprem",
+        slots: {
+          "Client":       ["APREM"],
+          "TLT Domicile": ["TLTDOMAPREM"],
+          "TLT Agence":   ["TLTAPREM"],
+        },
+        colors: { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" }
+      },
+      {
+        label: "Soir",
+        slots: {
+          "Client":       ["Soir"],
+          "TLT Domicile": ["TLTDOMSoir"],
+          "TLT Agence":   ["TLTSoir"],
+        },
+        colors: { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" }
+      },
+    ];
+
+    const rows = HORAIRES.map(({ label, slots, colors }) => {
+      // Compte les jours par type
+      const counts = {};
+      for (const type in slots) counts[type] = 0;
+
       for (const day in d.details) {
-        const count = d.details[day].filter((e) =>
-          obj.cats.includes(e.categorie),
-        ).length;
-        if (count === 1) days += 0.5; // Demi-journée (un seul créneau)
-        if (count >= 2) days += 1; // Journée complète (deux créneaux ou plus)
+        for (const [type, cats] of Object.entries(slots)) {
+          if (d.details[day].some(e => cats.includes(e.categorie)))
+            counts[type]++;
+        }
       }
-      return { label: obj.label, days };
-    });
 
-    // Ajout de la ligne Samedi si ce collaborateur en a
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      if (total === 0) return null;
+
+      // Barres de répartition
+      const bars = Object.entries(counts)
+        .filter(([, v]) => v > 0)
+        .map(([type, v]) => {
+          const pct = Math.round(v / total * 100);
+          return `<div class="repartition-bar-seg" style="width:${pct}%;background:${colors[type]}" title="${type} : ${v}j (${pct}%)"></div>`;
+        }).join("");
+
+      // Légende inline
+      const legend = Object.entries(counts)
+        .filter(([, v]) => v > 0)
+        .map(([type, v]) => `
+          <span class="rep-legend-item">
+            <span class="rep-dot" style="background:${colors[type]}"></span>
+            <span>${type}</span>
+            <span class="rep-val">${v}j</span>
+          </span>`).join("");
+
+      return `
+        <div class="repartition-row">
+          <div class="rep-label">${label}</div>
+          <div class="rep-right">
+            <div class="rep-total">${total}j</div>
+            <div class="repartition-bar-track">${bars}</div>
+            <div class="rep-legend">${legend}</div>
+          </div>
+        </div>`;
+    }).filter(Boolean).join("");
+
     const sam = filtered.byCategory?.samedi?.persons[n];
-    if (sam) rows.push({ label: "Samedi", days: sam.days.size });
+    const samRow = sam ? `
+      <div class="repartition-row">
+        <div class="rep-label">Samedi</div>
+        <div class="rep-right">
+          <div class="rep-total">${sam.days.size}j</div>
+          <div class="repartition-bar-track">
+            <div class="repartition-bar-seg" style="width:100%;background:#F472B6"></div>
+          </div>
+          <div class="rep-legend">
+            <span class="rep-legend-item">
+              <span class="rep-dot" style="background:#F472B6"></span>
+              <span>Travaillé</span>
+              <span class="rep-val">${sam.days.size}j</span>
+            </span>
+          </div>
+        </div>
+      </div>` : "";
 
-    return `
-      <table class="w-full">
-        <thead>
-          <tr>
-            <th>Horaire</th>
-            <th>Jours</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows
-            .map(
-              (r) => `
-            <tr>
-              <td>${r.label}</td>
-              <td>${Number.isInteger(r.days) ? r.days : r.days.toFixed(1)}</td>
-            </tr>
-          `,
-            )
-            .join("")}
-        </tbody>
-      </table>
-    `;
+    return rows || samRow
+      ? `<div class="repartition-block">${rows}${samRow}</div>`
+      : `<div style="color:var(--text-subtle);font-size:11px">Aucune donnée</div>`;
   }
 
   /* ============================================================
@@ -473,21 +590,51 @@ if (window.__UI_JS_LOADED__) {
   function renderConsolidatedCategory(key, cats) {
     document.getElementById("chartsBlock").style.display = "none";
 
+    // Définition des sous-types par horaire consolidé
+    const SUBTYPES = {
+      CONS_MATIN:  { "Client": ["Matin"], "TLT Domicile": ["TLTDOMMatin"], "TLT Agence": ["TLTMatin"] },
+      CONS_MIDI:   { "Client": ["Midi"],  "TLT Domicile": ["TLTDOMMidi"],  "TLT Agence": ["TLTMidi"]  },
+      CONS_APREM:  { "Client": ["APREM"],"TLT Domicile": ["TLTDOMAPREM"], "TLT Agence": ["TLTAPREM"] },
+      CONS_SOIR:   { "Client": ["Soir"],  "TLT Domicile": ["TLTDOMSoir"],  "TLT Agence": ["TLTSoir"]  },
+    };
+    const COLORS = { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" };
+    const subtypes = SUBTYPES[key];
+
     const arr = [];
 
     for (const p in filtered.byPerson) {
       let days = 0;
+      const sub = subtypes ? Object.fromEntries(Object.keys(subtypes).map(k => [k, 0])) : null;
+
       for (const day in filtered.byPerson[p].details) {
         const count = filtered.byPerson[p].details[day].filter((e) =>
           cats.includes(e.categorie),
         ).length;
         if (count === 1) days += 0.5;
         if (count >= 2) days += 1;
+
+        if (subtypes) {
+          for (const [type, typeCats] of Object.entries(subtypes)) {
+            if (filtered.byPerson[p].details[day].some(e => typeCats.includes(e.categorie)))
+              sub[type]++;
+          }
+        }
       }
-      if (days > 0) arr.push([p, days]);
+      if (days > 0) arr.push([p, days, sub]);
     }
 
     arr.sort((a, b) => b[1] - a[1]);
+
+    const renderSubBar = (sub) => {
+      if (!sub) return "";
+      const total = Object.values(sub).reduce((a, b) => a + b, 0);
+      if (total === 0) return "";
+      const bars = Object.entries(sub).filter(([, v]) => v > 0)
+        .map(([type, v]) => `<div class="repartition-bar-seg" style="width:${Math.round(v/total*100)}%;background:${COLORS[type]}" title="${type} : ${v}j"></div>`).join("");
+      const legend = Object.entries(sub).filter(([, v]) => v > 0)
+        .map(([type, v]) => `<span class="rep-legend-item"><span class="rep-dot" style="background:${COLORS[type]}"></span><span>${type}</span><span class="rep-val">${v}j</span></span>`).join("");
+      return `<div class="repartition-bar-track" style="margin-top:3px">${bars}</div><div class="rep-legend">${legend}</div>`;
+    };
 
     els.center.innerHTML = `
       <h2>${consolidatedMap[key].label}</h2>
@@ -500,17 +647,16 @@ if (window.__UI_JS_LOADED__) {
           </tr>
         </thead>
         <tbody>
-          ${arr
-            .map(
-              ([p, days], i) => `
+          ${arr.map(([p, days, sub], i) => `
             <tr class="tr-link" onclick="selPerson('${p}')" title="Voir ${p}">
               <td class="rank-cell">${i + 1}</td>
-              <td>${p}</td>
+              <td>
+                <div>${p}</div>
+                ${renderSubBar(sub)}
+              </td>
               <td>${Number.isInteger(days) ? days : days.toFixed(1)}</td>
             </tr>
-          `,
-            )
-            .join("")}
+          `).join("")}
         </tbody>
       </table>
     `;
@@ -692,6 +838,53 @@ if (window.__UI_JS_LOADED__) {
     renderState(e.state);
   });
 
+
+  /* ============================================================
+     FILTRE DU TABLEAU DE DÉTAILS (vue collaborateur)
+     ============================================================ */
+
+  function toggleDetailChip(btn) {
+    const wasActive = btn.classList.contains("active");
+    // Désactive tous les chips
+    document.querySelectorAll("#detailChips .detail-chip").forEach(c => c.classList.remove("active"));
+    // Réactive uniquement si ce n'était pas déjà actif (toggle off)
+    if (!wasActive) btn.classList.add("active");
+    filterDetails();
+  }
+
+  function filterDetails() {
+    const catVal   = document.getElementById("detailCatFilter")?.value || "";
+    const monthVal = document.getElementById("detailMonthFilter")?.value || "";
+
+    const activeChip = document.querySelector("#detailChips .detail-chip.active");
+    const chipKey    = activeChip?.dataset.chip || "";
+    const chipCats   = activeChip ? JSON.parse(activeChip.dataset.cats) : [];
+
+    const rows = document.querySelectorAll("#detailBody tr");
+    let visible = 0;
+
+    rows.forEach(tr => {
+      const trCats  = tr.dataset.cats  || "";
+      const trDate  = tr.dataset.date  || "";
+      const isSat   = new Date(trDate).getDay() === 6;
+
+      let matchChip = true;
+      if (chipKey === "samedi") {
+        matchChip = isSat;
+      } else if (chipCats.length > 0) {
+        matchChip = chipCats.some(c => trCats.includes(c));
+      }
+
+      const matchCat   = !catVal   || trCats.includes(catVal.toLowerCase());
+      const matchMonth = !monthVal || tr.dataset.month === monthVal;
+      const show = matchChip && matchCat && matchMonth;
+      tr.style.display = show ? "" : "none";
+      if (show) visible++;
+    });
+
+    const countEl = document.getElementById("detailCount");
+    if (countEl) countEl.textContent = `${visible} entrée${visible > 1 ? "s" : ""}`;
+  }
 
   /* ============================================================
      ACTIONS : SÉLECTION D'UN COLLABORATEUR

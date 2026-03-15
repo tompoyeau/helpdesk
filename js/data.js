@@ -276,12 +276,19 @@ function computeFiltered() {
 
   const byCat = {}, byMonth = {}, byPerson = {};
 
+  const ABS_CATS = new Set(["CP","Indisponible","Récup"]);
+
   for (const p of applyPersonFilter())
     for (const d in planning[p]) {
       if (fs && d < fs) continue;
       if (fe && d > fe) continue;
 
+      // Exclut les absences tombant un samedi (CP/Indispo/Récup le week-end ne comptent pas)
+      const isSaturday = new Date(d).getDay() === 6;
+
       planning[p][d].forEach(e => {
+        if (isSaturday && ABS_CATS.has(e.categorie)) return;
+
         byCat[e.categorie] = (byCat[e.categorie] || 0) + 1;
 
         byMonth[d.slice(0, 7)] = (byMonth[d.slice(0, 7)] || 0) + 1;
@@ -303,9 +310,12 @@ function computeFiltered() {
     for (const day in byPerson[p].details) {
       if (new Date(day).getDay() !== 6) continue;
 
-      const entries = byPerson[p].details[day].filter(e =>
-        !e.categorie.toLowerCase().includes("astreinte")
-      );
+      const entries = byPerson[p].details[day].filter(e => {
+        const cat = e.categorie.toLowerCase();
+        return !cat.includes("astreinte")
+            && cat !== "cp"
+            && cat !== "indisponible";
+      });
       if (!entries.length) continue;
 
       filtered.byCategory.samedi.d.add(day);
