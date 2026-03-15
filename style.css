@@ -256,6 +256,10 @@ html, body {
 .app-sidebar {
   background: var(--bg-sidebar);
   box-shadow: inset -1px 0 0 var(--border);
+  position: sticky;
+  top: 52px;
+  height: calc(100vh - 52px);
+  overflow-y: auto;
 }
 
 .sidebar-section-label {
@@ -939,8 +943,7 @@ html, body {
   flex: 1;
   display: grid;
   grid-template-columns: 240px 1fr 220px;
-  overflow: hidden;
-  position: relative;
+  align-items: start;
 }
 
 .layout-main {
@@ -1198,7 +1201,7 @@ html, body {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 20px;
 }

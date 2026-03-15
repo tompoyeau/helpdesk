@@ -322,22 +322,21 @@ if (window.__UI_JS_LOADED__) {
 
     // --- Calcul des stats ---
     const TLT_CATS  = new Set(["TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir","TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"]);
-    const CLI_CATS  = new Set(["Matin","Midi","APREM","Soir","Formation"]); // Formation = chez le client
-    const ABS_CATS  = new Set(["CP","Indisponible","Récup"]);
+    const CLI_CATS  = new Set(["Matin","Midi","APREM","Soir","Formation"]);
     const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, "ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir","Pilote","PiloteBO","Astreinte"]);
 
-    let workDays = 0, tltDays = 0, clientDays = 0, absDays = 0;
+    let workDays = 0, tltDays = 0, clientDays = 0, cpDays = 0;
 
     for (const day in d.details) {
       const entries = d.details[day];
       const hasWork   = entries.some(e => WORK_CATS.has(e.categorie));
       const hasTlt    = entries.some(e => TLT_CATS.has(e.categorie));
       const hasClient = entries.some(e => CLI_CATS.has(e.categorie));
-      const hasAbs    = entries.some(e => ABS_CATS.has(e.categorie));
-      if (hasWork)            workDays++;
-      if (hasTlt)             tltDays++;
-      if (hasClient)          clientDays++;
-      if (hasAbs && !hasWork) absDays++;
+      const hasCP     = entries.some(e => e.categorie === "CP");
+      if (hasWork)   workDays++;
+      if (hasTlt)    tltDays++;
+      if (hasClient) clientDays++;
+      if (hasCP && new Date(day).getDay() !== 6) cpDays++;
     }
 
     const tauxTlt    = workDays > 0 ? Math.round(tltDays / workDays * 100) : 0;
@@ -351,7 +350,7 @@ if (window.__UI_JS_LOADED__) {
       { label: "Jours travaillés", value: workDays,         sub: `${firstDay ? formatFR(firstDay) : "—"} → ${lastDay ? formatFR(lastDay) : "—"}`, color: "#6366F1", icon: `<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>` },
       { label: "Taux TLT",         value: tauxTlt + "%",    sub: `${tltDays}j en télétravail`,       color: tltColor,   icon: `<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>` },
       { label: "Taux client",      value: tauxClient + "%", sub: `${clientDays}j chez le client`,    color: "#34D399",  icon: `<path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>` },
-      { label: "Absences",         value: absDays,          sub: `CP, Indispo, Récup`,               color: "#94A3B8",  icon: `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>` },
+      { label: "CP",               value: cpDays,           sub: `jours de congés`,                  color: "#94A3B8",  icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>` },
     ];
 
     const statsHTML = `

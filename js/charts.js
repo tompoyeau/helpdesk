@@ -275,9 +275,6 @@ function getDashboardHTML(rows, colors) {
   const periode = fs && fe ? `${fmtD(fs)} → ${fmtD(fe)}` : "—";
 
   const tltColor = kpi.tauxTlt >= 50 ? "#22D3EE" : kpi.tauxTlt >= 30 ? "#A78BFA" : "#6366F1";
-  const topName  = kpi.topPerson ? kpi.topPerson[0] : "—";
-  const topDays  = kpi.topPerson ? kpi.topPerson[1] : 0;
-  const topShort = topName !== "—" && topName.length > 15 ? topName.split(" ")[0] : topName;
 
   return `
     <div class="kpi-grid">
@@ -320,19 +317,6 @@ function getDashboardHTML(rows, colors) {
           <span class="kpi-label">Taux télétravail</span>
           <span class="kpi-value" style="color:${tltColor}">${kpi.tauxTlt}%</span>
           <span class="kpi-sub">des jours travaillés</span>
-        </div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-icon" style="background:rgba(244,114,182,0.1)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-          </svg>
-        </div>
-        <div class="kpi-body">
-          <span class="kpi-label">Top collaborateur</span>
-          <span class="kpi-value" style="font-size:14px" title="${topName}">${topShort}</span>
-          <span class="kpi-sub">${topDays} jours</span>
         </div>
       </div>
 
