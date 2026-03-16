@@ -32,12 +32,6 @@ if (window.__UI_JS_LOADED__) {
       "TLTSoir",
       "ApremRenf",
     ],
-    "Travail à l'agence": [
-      "ApsideMatin",
-      "ApsideMidi",
-      "ApsideAPREM",
-      "ApsideSoir",
-    ],
     "Projet / Pilote": ["Pilote", "PiloteBO"],
     Autres: ["Formation", "Indisponible", "Astreinte", "Récup", "CP"],
   };
@@ -49,10 +43,11 @@ if (window.__UI_JS_LOADED__) {
    * Clés préfixées CONS_ pour les distinguer des catégories brutes du JSON.
    */
   const consolidatedMap = {
-    CONS_MATIN: { label: "Matin", cats: ["Matin", "TLTDOMMatin", "TLTMatin"] },
-    CONS_MIDI: { label: "Midi", cats: ["Midi", "TLTDOMMidi", "TLTMidi"] },
-    CONS_APREM: { label: "Aprem", cats: ["APREM", "TLTDOMAPREM", "TLTAPREM"] },
-    CONS_SOIR: { label: "Soir", cats: ["Soir", "TLTDOMSoir", "TLTSoir"] },
+    CONS_MATIN:  { label: "Matin",           cats: ["Matin", "TLTDOMMatin", "TLTMatin"] },
+    CONS_MIDI:   { label: "Midi",            cats: ["Midi", "TLTDOMMidi", "TLTMidi"] },
+    CONS_APREM:  { label: "Aprem",           cats: ["APREM", "TLTDOMAPREM", "TLTAPREM"] },
+    CONS_SOIR:   { label: "Soir",            cats: ["Soir", "TLTDOMSoir", "TLTSoir"] },
+    CONS_AGENCE: { label: "Journées verte", cats: ["ApsideMatin", "ApsideMidi", "ApsideAPREM", "ApsideSoir"] },
   };
 
   /* ============================================================
@@ -203,28 +198,25 @@ if (window.__UI_JS_LOADED__) {
         <ul style="margin-top:2px">
           ${Object.entries(consolidatedMap)
             .map(
-              ([key, obj]) => `
+              ([key, obj]) => {
+                const dotColor = key === "CONS_AGENCE" ? "#34D399" : "var(--accent)";
+                return `
             <li class="sidebar-item" data-name="${key}" onclick="selCat('${key}')">
               <div class="flex items-center gap-2">
-                <div class="color-dot" style="background:var(--accent);opacity:0.6"></div>
+                <div class="color-dot" style="background:${dotColor};opacity:0.8"></div>
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${obj.label}</span>
               </div>
             </li>
-          `,
+          `;}
             )
             .join("")}
-          ${
-            hasSamedi
-              ? `
+          ${hasSamedi ? `
             <li class="sidebar-item" data-name="samedi" onclick="selCat('samedi')">
               <div class="flex items-center gap-2">
                 <div class="color-dot" style="background:#60A5FA;opacity:0.8"></div>
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">Samedi</span>
               </div>
-            </li>
-          `
-              : ""
-          }
+            </li>` : ""}
         </ul>
       </div>
     `;
@@ -322,7 +314,7 @@ if (window.__UI_JS_LOADED__) {
 
     // --- Calcul des stats ---
     const TLT_CATS  = new Set(["TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir","TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"]);
-    const CLI_CATS  = new Set(["Matin","Midi","APREM","Soir","Formation"]);
+    const CLI_CATS  = new Set(["Matin","Midi","APREM","Soir","Formation","PiloteBO"]);
     const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, "ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir","Pilote","PiloteBO","Astreinte"]);
 
     let workDays = 0, tltDays = 0, clientDays = 0, cpDays = 0;
@@ -510,6 +502,13 @@ if (window.__UI_JS_LOADED__) {
         },
         colors: { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" }
       },
+      {
+        label: "Journées verte",
+        slots: {
+          "Agence": ["ApsideMatin", "ApsideMidi", "ApsideAPREM", "ApsideSoir"],
+        },
+        colors: { "Agence": "#34D399" }
+      },
     ];
 
     const rows = HORAIRES.map(({ label, slots, colors }) => {
@@ -595,6 +594,7 @@ if (window.__UI_JS_LOADED__) {
       CONS_MIDI:   { "Client": ["Midi"],  "TLT Domicile": ["TLTDOMMidi"],  "TLT Agence": ["TLTMidi"]  },
       CONS_APREM:  { "Client": ["APREM"],"TLT Domicile": ["TLTDOMAPREM"], "TLT Agence": ["TLTAPREM"] },
       CONS_SOIR:   { "Client": ["Soir"],  "TLT Domicile": ["TLTDOMSoir"],  "TLT Agence": ["TLTSoir"]  },
+      CONS_AGENCE: { "Agence": ["ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir"] },
     };
     const COLORS = { "Client": "#6366F1", "TLT Domicile": "#22D3EE", "TLT Agence": "#A78BFA" };
     const subtypes = SUBTYPES[key];
@@ -626,6 +626,7 @@ if (window.__UI_JS_LOADED__) {
 
     const renderSubBar = (sub) => {
       if (!sub) return "";
+      if (key === "CONS_AGENCE") return ""; // Pas de répartition pour les journées vertes
       const total = Object.values(sub).reduce((a, b) => a + b, 0);
       if (total === 0) return "";
       const bars = Object.entries(sub).filter(([, v]) => v > 0)
