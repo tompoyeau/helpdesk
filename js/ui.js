@@ -298,21 +298,25 @@ if (window.__UI_JS_LOADED__) {
 
     const d = filtered.byPerson[n];
 
-    // Agrégation par catégorie brute
+    // Agrégation par catégorie brute — avec demi-journées (1 entrée = 0.5j, 2+ = 1j)
     const byCat = {};
-    for (const day in d.details)
-      d.details[day].forEach((e) => {
-        byCat[e.categorie] = byCat[e.categorie] || new Set();
-        byCat[e.categorie].add(day);
+    for (const day in d.details) {
+      const catCounts = {};
+      d.details[day].forEach(e => {
+        catCounts[e.categorie] = (catCounts[e.categorie] || 0) + 1;
       });
+      for (const [cat, count] of Object.entries(catCounts)) {
+        byCat[cat] = (byCat[cat] || 0) + (count === 1 ? 0.5 : 1);
+      }
+    }
 
     const rows = Object.entries(byCat)
-      .map(([cat, days]) => [cat, days.size])
+      .map(([cat, jours]) => [cat, jours])
       .sort((a, b) => b[1] - a[1]);
 
     const days = Object.keys(d.details).sort().reverse();
 
-    // --- Calcul des stats ---
+    // --- Calcul des stats (demi-journées) ---
     const TLT_CATS  = new Set(["TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir","TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"]);
     const CLI_CATS  = new Set(["Matin","Midi","APREM","Soir","Formation","PiloteBO"]);
     const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, "ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir","Pilote","PiloteBO","Astreinte"]);
@@ -320,15 +324,18 @@ if (window.__UI_JS_LOADED__) {
     let workDays = 0, tltDays = 0, clientDays = 0, cpDays = 0;
 
     for (const day in d.details) {
-      const entries = d.details[day];
-      const hasWork   = entries.some(e => WORK_CATS.has(e.categorie));
-      const hasTlt    = entries.some(e => TLT_CATS.has(e.categorie));
-      const hasClient = entries.some(e => CLI_CATS.has(e.categorie));
-      const hasCP     = entries.some(e => e.categorie === "CP");
-      if (hasWork)   workDays++;
-      if (hasTlt)    tltDays++;
-      if (hasClient) clientDays++;
-      if (hasCP && new Date(day).getDay() !== 6) cpDays++;
+      const entries  = d.details[day];
+      const workCount   = entries.filter(e => WORK_CATS.has(e.categorie)).length;
+      const tltCount    = entries.filter(e => TLT_CATS.has(e.categorie)).length;
+      const clientCount = entries.filter(e => CLI_CATS.has(e.categorie)).length;
+      const cpCount     = entries.filter(e => e.categorie === "CP").length;
+
+      const toDay = c => c === 1 ? 0.5 : c >= 2 ? 1 : 0;
+      workDays   += toDay(workCount);
+      tltDays    += toDay(tltCount);
+      clientDays += toDay(clientCount);
+      if (cpCount > 0 && new Date(day).getDay() !== 6)
+        cpDays += toDay(cpCount);
     }
 
     const tauxTlt    = workDays > 0 ? Math.round(tltDays / workDays * 100) : 0;
@@ -336,13 +343,14 @@ if (window.__UI_JS_LOADED__) {
     const firstDay   = days[days.length - 1];
     const lastDay    = days[0];
 
+    const fmtJ = v => Number.isInteger(v) ? v : v.toFixed(1);
     const tltColor = tauxTlt >= 50 ? "#22D3EE" : tauxTlt >= 30 ? "#A78BFA" : "#6366F1";
 
     const statCards = [
-      { label: "Jours travaillés", value: workDays,         sub: `${firstDay ? formatFR(firstDay) : "—"} → ${lastDay ? formatFR(lastDay) : "—"}`, color: "#6366F1", icon: `<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>` },
-      { label: "Taux TLT",         value: tauxTlt + "%",    sub: `${tltDays}j en télétravail`,       color: tltColor,   icon: `<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>` },
-      { label: "Taux client",      value: tauxClient + "%", sub: `${clientDays}j chez le client`,    color: "#34D399",  icon: `<path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>` },
-      { label: "CP",               value: cpDays,           sub: `jours de congés`,                  color: "#94A3B8",  icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>` },
+      { label: "Jours travaillés", value: fmtJ(workDays),    sub: `${firstDay ? formatFR(firstDay) : "—"} → ${lastDay ? formatFR(lastDay) : "—"}`, color: "#6366F1", icon: `<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>` },
+      { label: "Taux TLT",         value: tauxTlt + "%",     sub: `${fmtJ(tltDays)}j en télétravail`,    color: tltColor,  icon: `<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>` },
+      { label: "Taux client",      value: tauxClient + "%",  sub: `${fmtJ(clientDays)}j chez le client`, color: "#34D399", icon: `<path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>` },
+      { label: "CP",               value: fmtJ(cpDays),      sub: `jours de congés`,                     color: "#94A3B8", icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>` },
     ];
 
     const statsHTML = `
@@ -387,7 +395,7 @@ if (window.__UI_JS_LOADED__) {
                       ${cat}
                     </div>
                   </td>
-                  <td>${jours}</td>
+                  <td>${Number.isInteger(jours) ? jours : jours.toFixed(1)}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -512,19 +520,22 @@ if (window.__UI_JS_LOADED__) {
     ];
 
     const rows = HORAIRES.map(({ label, slots, colors }) => {
-      // Compte les jours par type
+      // Compte les jours par type avec logique demi-journée
       const counts = {};
       for (const type in slots) counts[type] = 0;
 
       for (const day in d.details) {
         for (const [type, cats] of Object.entries(slots)) {
-          if (d.details[day].some(e => cats.includes(e.categorie)))
-            counts[type]++;
+          const count = d.details[day].filter(e => cats.includes(e.categorie)).length;
+          if (count === 1) counts[type] += 0.5;
+          else if (count >= 2) counts[type] += 1;
         }
       }
 
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
       if (total === 0) return null;
+
+      const fmtV = v => Number.isInteger(v) ? v : v.toFixed(1);
 
       // Barres de répartition
       const bars = Object.entries(counts)
@@ -541,14 +552,14 @@ if (window.__UI_JS_LOADED__) {
           <span class="rep-legend-item">
             <span class="rep-dot" style="background:${colors[type]}"></span>
             <span>${type}</span>
-            <span class="rep-val">${v}j</span>
+            <span class="rep-val">${fmtV(v)}j</span>
           </span>`).join("");
 
       return `
         <div class="repartition-row">
           <div class="rep-label">${label}</div>
           <div class="rep-right">
-            <div class="rep-total">${total}j</div>
+            <div class="rep-total">${fmtV(total)}j</div>
             <div class="repartition-bar-track">${bars}</div>
             <div class="rep-legend">${legend}</div>
           </div>
