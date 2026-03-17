@@ -299,6 +299,8 @@ if (window.__UI_JS_LOADED__) {
     const d = filtered.byPerson[n];
 
     // Agrégation par catégorie brute — avec demi-journées (1 entrée = 0.5j, 2+ = 1j)
+    // Exception : CP et Indisponible = journée entière (1 entrée = 1j)
+    const FULL_DAY_CATS = new Set(["CP", "Indisponible", "Récup"]);
     const byCat = {};
     for (const day in d.details) {
       const catCounts = {};
@@ -306,7 +308,8 @@ if (window.__UI_JS_LOADED__) {
         catCounts[e.categorie] = (catCounts[e.categorie] || 0) + 1;
       });
       for (const [cat, count] of Object.entries(catCounts)) {
-        byCat[cat] = (byCat[cat] || 0) + (count === 1 ? 0.5 : 1);
+        const val = FULL_DAY_CATS.has(cat) ? 1 : (count === 1 ? 0.5 : 1);
+        byCat[cat] = (byCat[cat] || 0) + val;
       }
     }
 
@@ -335,7 +338,7 @@ if (window.__UI_JS_LOADED__) {
       tltDays    += toDay(tltCount);
       clientDays += toDay(clientCount);
       if (cpCount > 0 && new Date(day).getDay() !== 6)
-        cpDays += toDay(cpCount);
+        cpDays += 1; // CP = journée entière, pas de demi-journée
     }
 
     const tauxTlt    = workDays > 0 ? Math.round(tltDays / workDays * 100) : 0;
@@ -415,11 +418,12 @@ if (window.__UI_JS_LOADED__) {
         <!-- Chips horaires consolidés -->
         <div class="detail-chips" id="detailChips">
           ${[
-            { key: "matin",  label: "Matin",  cats: ["matin","tltdommatin","tltmatin"] },
-            { key: "midi",   label: "Midi",   cats: ["midi","tltdommidi","tltmidi"] },
-            { key: "aprem",  label: "Aprem",  cats: ["aprem","tltdomaprem","tltaprem"] },
-            { key: "soir",   label: "Soir",   cats: ["soir","tltdomsoir","tltsoir"] },
-            { key: "samedi", label: "Samedi", cats: ["samedi"] },
+            { key: "matin",          label: "Matin",           cats: ["matin","tltdommatin","tltmatin"] },
+            { key: "midi",           label: "Midi",            cats: ["midi","tltdommidi","tltmidi"] },
+            { key: "aprem",          label: "Aprem",           cats: ["aprem","tltdomaprem","tltaprem"] },
+            { key: "soir",           label: "Soir",            cats: ["soir","tltdomsoir","tltsoir"] },
+            { key: "journees-vertes",label: "Journées vertes", cats: ["apsidématin","apsidemidi","apsideaprem","apsidesoir"] },
+            { key: "samedi",         label: "Samedi",          cats: ["samedi"] },
           ].map(h => `<button class="detail-chip" data-chip="${h.key}" data-cats='${JSON.stringify(h.cats)}' onclick="toggleDetailChip(this)">${h.label}</button>`).join("")}
         </div>
 
@@ -874,6 +878,8 @@ if (window.__UI_JS_LOADED__) {
     const rows = document.querySelectorAll("#detailBody tr");
     let visible = 0;
 
+    const JOURNEES_VERTES = new Set(["apsidématin","apsidemidi","apsideaprem","apsidesoir","apsidematin"]);
+
     rows.forEach(tr => {
       const trCats  = tr.dataset.cats  || "";
       const trDate  = tr.dataset.date  || "";
@@ -882,6 +888,8 @@ if (window.__UI_JS_LOADED__) {
       let matchChip = true;
       if (chipKey === "samedi") {
         matchChip = isSat;
+      } else if (chipKey === "journees-vertes") {
+        matchChip = [...JOURNEES_VERTES].some(c => trCats.includes(c));
       } else if (chipCats.length > 0) {
         matchChip = chipCats.some(c => trCats.includes(c));
       }
