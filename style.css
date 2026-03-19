@@ -737,7 +737,11 @@ html, body {
   color: var(--text-muted) !important;
 }
 
-.dark input[type="date"],
+.dark input[type="date"] {
+  background-color: transparent !important;
+  color: var(--text) !important;
+  border-color: var(--border-input) !important;
+}
 .dark input[type="text"],
 .dark input[type="search"] {
   background-color: var(--bg) !important;
