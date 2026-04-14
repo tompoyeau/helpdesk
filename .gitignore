@@ -128,4 +128,5 @@ dmypy.json
 
 *python
 setup_tache_planifiee.ps1
+setup_tache_verification.ps1
 planning.json
