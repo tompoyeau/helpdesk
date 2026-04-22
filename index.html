@@ -13,6 +13,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="icon" type="image/png" sizes="32x32" href="icone.png">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="js/planning-styles.css">
 </head>
 
 <body class="flex flex-col" style="min-height:100vh">
@@ -96,6 +97,11 @@
           <i data-lucide="layout-dashboard" style="width:13px;height:13px;"></i>
           Tableau de bord
         </button>
+        
+        <button id="viewPlanning" class="btn-dashboard w-full mb-2.5">
+          <i data-lucide="calendar-days" style="width:13px;height:13px;"></i>
+          Planning - Work in progress
+        </button>
 
         <label class="toggle-label flex items-center gap-2 cursor-pointer">
           <input type="checkbox" id="filterActive" checked class="toggle-input">
@@ -124,14 +130,19 @@
     <!-- CONTENU CENTRAL -->
     <main class="layout-main flex flex-col" style="background:var(--bg-surface)">
 
-      <!-- CHARTS -->
-      <section>
-        <div id="chartsBlock" class="grid charts-container" style="grid-template-columns:1fr 1fr"></div>
+      <!-- VUE PLANNING -->
+      <section id="planningView">
+        <div id="planningContent"></div>
       </section>
 
-      <!-- DETAILS -->
-      <section style="padding:12px 12px 12px">
-        <div id="center" class="content-card text-xs">Chargement…</div>
+      <!-- CHARTS -->
+      <section id="dashboardView">
+        <div id="chartsBlock" class="grid charts-container" style="grid-template-columns:1fr 1fr"></div>
+      
+        <!-- DETAILS -->
+        <div style="padding:12px 12px 12px">
+          <div id="center" class="content-card text-xs">Chargement…</div>
+        </div>
       </section>
 
     </main>
@@ -207,6 +218,7 @@
   <script src="js/data.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/charts.js"></script>
+  <script src="js/planning.js"></script>
 
 </body>
 </html>

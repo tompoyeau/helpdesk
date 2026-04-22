@@ -808,30 +808,64 @@ if (window.__UI_JS_LOADED__) {
    * @param {boolean} replace  true = replaceState (pas de nouvel entrée)
    */
   function navigate(state, replace = false) {
+    // Mise à jour de l'URL selon la vue
+    let url = '/';
+    if (state?.view === 'planning') {
+      url = '/planning';
+    }
+    
     if (replace) {
-      history.replaceState(state, "");
+      history.replaceState(state, "", url);
     } else {
-      history.pushState(state, "");
+      history.pushState(state, "", url);
     }
     renderState(state);
   }
 
   /** Restaure une vue à partir d'un objet state. */
   function renderState(state) {
-    if (!state) { renderGlobal(); updateCharts(); return; }
+    // Masque toutes les vues
+    const planningView = document.getElementById("planningView");
+    const dashboardView = document.getElementById("dashboardView");
+    
+    if (!state) { 
+      dashboardView.style.display = "block";
+      planningView.style.display = "none";
+      renderGlobal(); 
+      updateCharts(); 
+      return; 
+    }
 
     switch (state.view) {
+      case "planning":
+        dashboardView.style.display = "none";
+        planningView.classList.add("active");
+        planningView.style.display = "flex";
+        document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+        if (typeof renderPlanning === 'function') {
+          renderPlanning();
+        }
+        break;
       case "global":
+        planningView.style.display = "none";
+        planningView.classList.remove("active");
+        dashboardView.style.display = "block";
         document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
         renderGlobal();
         updateCharts();
         break;
       case "person":
+        planningView.style.display = "none";
+        planningView.classList.remove("active");
+        dashboardView.style.display = "block";
         document.querySelectorAll("#categoryList .sidebar-item").forEach(el => el.classList.remove("active"));
         renderPerson(state.name);
         highlight("person", state.name);
         break;
       case "cat":
+        planningView.style.display = "none";
+        planningView.classList.remove("active");
+        dashboardView.style.display = "block";
         document.querySelectorAll("#personList .sidebar-item").forEach(el => el.classList.remove("active"));
         if (consolidatedMap[state.name]) {
           renderConsolidatedCategory(state.name, consolidatedMap[state.name].cats);
@@ -937,6 +971,12 @@ if (window.__UI_JS_LOADED__) {
     navigate({ view: "global" });
   };
 
+  // Bouton "Planning" : aller vers la vue planning
+  document.getElementById("viewPlanning").onclick = () => {
+    closeAllDrawers();
+    navigate({ view: "planning" });
+  };
+
   // Checkbox "Afficher uniquement les FO actuels"
   document.getElementById("filterActive").onchange = () => {
     computeFiltered();
@@ -952,6 +992,12 @@ if (window.__UI_JS_LOADED__) {
   };
 
   // État initial : remplace le state vide par "global"
-  navigate({ view: "global" }, true);
+  // Vérifie si on doit afficher le planning via l'URL
+  const initialPath = window.location.pathname;
+  if (initialPath.includes('/planning')) {
+    navigate({ view: "planning" }, true);
+  } else {
+    navigate({ view: "global" }, true);
+  }
 
 } // fin du guard
