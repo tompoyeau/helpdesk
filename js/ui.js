@@ -808,16 +808,20 @@ if (window.__UI_JS_LOADED__) {
    * @param {boolean} replace  true = replaceState (pas de nouvel entrée)
    */
   function navigate(state, replace = false) {
-    // Mise à jour de l'URL selon la vue
-    let url = '/';
+    // Utilise des hash pour GitHub Pages (compatible)
+    let hash = '';
     if (state?.view === 'planning') {
-      url = '/planning';
+      hash = '#planning';
+    } else if (state?.view === 'person') {
+      hash = `#person/${state.name}`;
+    } else if (state?.view === 'cat') {
+      hash = `#cat/${state.name}`;
     }
     
     if (replace) {
-      history.replaceState(state, "", url);
+      history.replaceState(state, "", hash || '#');
     } else {
-      history.pushState(state, "", url);
+      history.pushState(state, "", hash || '#');
     }
     renderState(state);
   }
@@ -992,12 +996,34 @@ if (window.__UI_JS_LOADED__) {
   };
 
   // État initial : remplace le state vide par "global"
-  // Vérifie si on doit afficher le planning via l'URL
-  const initialPath = window.location.pathname;
-  if (initialPath.includes('/planning')) {
+  // Vérifie si on doit afficher le planning via l'URL hash
+  const initialHash = window.location.hash;
+  if (initialHash === '#planning') {
     navigate({ view: "planning" }, true);
+  } else if (initialHash.startsWith('#person/')) {
+    const name = decodeURIComponent(initialHash.replace('#person/', ''));
+    navigate({ view: "person", name }, true);
+  } else if (initialHash.startsWith('#cat/')) {
+    const name = decodeURIComponent(initialHash.replace('#cat/', ''));
+    navigate({ view: "cat", name }, true);
   } else {
     navigate({ view: "global" }, true);
   }
+
+  // Écoute les changements de hash
+  window.addEventListener('hashchange', () => {
+    const hash = window.location.hash;
+    if (hash === '#planning') {
+      navigate({ view: "planning" }, true);
+    } else if (hash.startsWith('#person/')) {
+      const name = decodeURIComponent(hash.replace('#person/', ''));
+      navigate({ view: "person", name }, true);
+    } else if (hash.startsWith('#cat/')) {
+      const name = decodeURIComponent(hash.replace('#cat/', ''));
+      navigate({ view: "cat", name }, true);
+    } else {
+      navigate({ view: "global" }, true);
+    }
+  });
 
 } // fin du guard
