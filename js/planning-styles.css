@@ -61,6 +61,88 @@
   justify-content: center;
 }
 
+/* Planning sections */
+.planning-section {
+  margin-bottom: 24px;
+}
+
+.planning-section-others {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 2px solid var(--border);
+}
+
+.planning-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(167, 139, 250, 0.08) 100%);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--planning-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.planning-section-header i {
+  color: var(--planning-accent);
+}
+
+/* Bouton favori */
+.btn-favorite {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.btn-favorite:hover {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--planning-accent);
+  color: var(--planning-accent);
+  transform: scale(1.1);
+}
+
+.btn-favorite.active {
+  background: linear-gradient(135deg, #FCD34D 0%, #F59E0B 100%);
+  border-color: #F59E0B;
+  color: white;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.btn-favorite.active:hover {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  transform: scale(1.15);
+}
+
+/* Ligne favorite */
+.planning-row-favorite {
+  background: linear-gradient(135deg, rgba(252, 211, 77, 0.05) 0%, rgba(245, 158, 11, 0.05) 100%);
+  border-left: 3px solid #F59E0B;
+  padding-left: 8px;
+  border-radius: 12px;
+}
+
+.planning-row-favorite:hover {
+  background: linear-gradient(135deg, rgba(252, 211, 77, 0.08) 0%, rgba(245, 158, 11, 0.08) 100%);
+}
+
+.planning-row-favorite .planning-avatar {
+  box-shadow: 0 2px 12px rgba(245, 158, 11, 0.3);
+}
+
 /* Grille du planning */
 .planning-grid-header {
   display: grid;
@@ -286,6 +368,11 @@
     display: none;
   }
   
+  .planning-section-header {
+    font-size: 0.75rem;
+    padding: 10px 12px;
+  }
+  
   .planning-row {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -296,10 +383,21 @@
     gap: 12px;
   }
   
+  .planning-row-favorite {
+    border: 2px solid #F59E0B;
+  }
+  
   .planning-name-cell {
     padding: 0;
     border-bottom: 1px solid var(--border);
     padding-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .btn-favorite {
+    margin-left: auto;
   }
   
   .planning-cell {
@@ -327,7 +425,6 @@
   
   .planning-nav {
     justify-content: space-between;
-    
   }
   
   .planning-period {
