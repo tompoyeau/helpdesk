@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, readonly } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import { db } from '@/firebase/config'
 import { collection, getDocs } from 'firebase/firestore'
 
@@ -122,10 +122,11 @@ function analyzeActivities(activites) {
    ============================================================ */
 
 export const useDataStore = defineStore('data', () => {
-  const _planning      = ref({})
-  const _persons       = ref([])
-  const _personnesData = ref({})
-  const _nameToPersonId = ref({})
+  // shallowRef : Vue ne proxy pas récursivement les données volumineuses
+  const _planning       = shallowRef({})
+  const _persons        = ref([])
+  const _personnesData  = shallowRef({})
+  const _nameToPersonId = shallowRef({})
 
   const categories = ref([])
   const colors     = ref({})
@@ -191,6 +192,8 @@ export const useDataStore = defineStore('data', () => {
       const allCategories = new Set()
       const allColors     = {}
 
+      const newNameToPersonId = {}
+
       rawData.forEach(day => {
         const date = parseDateFromId(day.id)
         if (!date || !Array.isArray(day.ressources)) return
@@ -198,8 +201,7 @@ export const useDataStore = defineStore('data', () => {
         day.ressources.forEach(person => {
           const fullName = `${person.nom} ${person.prenom}`
           if (!newPlanning[fullName]) newPlanning[fullName] = {}
-          if (person.idPersonne && !_nameToPersonId.value[fullName])
-            _nameToPersonId.value[fullName] = person.idPersonne
+          if (person.idPersonne) newNameToPersonId[fullName] = person.idPersonne
 
           const entries = analyzeActivities(person.activites || [])
           if (entries.length > 0) {
@@ -212,10 +214,12 @@ export const useDataStore = defineStore('data', () => {
         })
       })
 
-      _planning.value  = newPlanning
-      _persons.value   = Object.keys(newPlanning).sort()
-      categories.value = [...allCategories].sort()
-      colors.value     = allColors
+      // Assignations en bloc : une seule notification réactive par ref
+      _nameToPersonId.value = newNameToPersonId
+      _planning.value       = newPlanning
+      _persons.value        = Object.keys(newPlanning).sort()
+      categories.value      = [...allCategories].sort()
+      colors.value          = allColors
 
       if (import.meta.env.DEV) {
         console.log(`✅ Planning : ${_persons.value.length} collaborateurs, ${rawData.length} jours`)
@@ -231,11 +235,14 @@ export const useDataStore = defineStore('data', () => {
   async function loadPersonnes() {
     try {
       const snapshot = await getDocs(collection(db, 'personnes'))
+      const newData  = {}
       snapshot.forEach(doc => {
         const data = doc.data()
         const id   = data.id || doc.id
-        _personnesData.value[id] = data
+        newData[id] = data
       })
+      // Assignation en bloc — une seule notification réactive
+      _personnesData.value = newData
       if (import.meta.env.DEV) {
         console.log(`✅ Personnes : ${Object.keys(_personnesData.value).length}`)
       }
@@ -306,10 +313,9 @@ export const useDataStore = defineStore('data', () => {
   }
 
   return {
-    // Données en lecture seule depuis l'extérieur
-    planning:      readonly(_planning),
-    persons:       readonly(_persons),
-    personnesData: readonly(_personnesData),
+    planning:     _planning,
+    persons:      _persons,
+    personnesData: _personnesData,
     categories,
     colors,
     loading,
