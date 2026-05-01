@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, readonly } from 'vue'
 import { db } from '@/firebase/config'
 import { collection, getDocs } from 'firebase/firestore'
 
@@ -52,6 +52,11 @@ for (let i = 0; i <= 44; i++) {
 /* ============================================================
    HELPERS
    ============================================================ */
+
+// Formatage local (évite le décalage UTC de toISOString)
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function parseDateFromId(id) {
   if (!id || id.length !== 8) return null
@@ -117,24 +122,62 @@ function analyzeActivities(activites) {
    ============================================================ */
 
 export const useDataStore = defineStore('data', () => {
-  const planning      = ref({})
-  const persons       = ref([])
-  const categories    = ref([])
-  const colors        = ref({})
-  const personnesData = ref({})
-  const nameToPersonId = ref({})
-  const loading       = ref(false)
-  const error         = ref(null)
+  const _planning      = ref({})
+  const _persons       = ref([])
+  const _personnesData = ref({})
+  const _nameToPersonId = ref({})
+
+  const categories = ref([])
+  const colors     = ref({})
+  const loading    = ref(false)
+  const error      = ref(null)
 
   // Filtres
   const filterStart  = ref('')
   const filterEnd    = ref('')
   const filterActive = ref(true)
 
-  // Données filtrées (calculées à la demande via computeFiltered)
+  // Données filtrées
   const filtered = ref(null)
 
-  /* ---- Chargement ---- */
+  /* ── Personnes actives (computed — mis en cache automatiquement) ── */
+  const activePersonsList = computed(() => {
+    if (!filterActive.value || !Object.keys(_personnesData.value).length)
+      return _persons.value
+
+    const parseDate = str => {
+      if (!str) return null
+      const parts = str.trim().split(' ')
+      if (parts.length < 3) return null
+      const [d, m, y] = parts
+      return new Date(+y, +m - 1, +d)
+    }
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const activeIds = new Set(
+      Object.values(_personnesData.value)
+        .filter(p => {
+          const arrivee = parseDate(p.arrivee)
+          const depart  = parseDate(p.depart)
+          if (!arrivee || today < arrivee) return false
+          if (depart && today > depart)    return false
+          return true
+        })
+        .map(p => p.id)
+    )
+
+    return _persons.value.filter(name => {
+      const id = _nameToPersonId.value[name]
+      return id && activeIds.has(id)
+    })
+  })
+
+  // Compatibilité : garde activePersons() comme fonction pour les composants existants
+  function activePersons() { return activePersonsList.value }
+
+  /* ── Chargement ── */
 
   async function loadPlanning() {
     loading.value = true
@@ -144,9 +187,9 @@ export const useDataStore = defineStore('data', () => {
       const rawData  = []
       snapshot.forEach(doc => rawData.push({ id: doc.id, ...doc.data() }))
 
-      const newPlanning    = {}
-      const allCategories  = new Set()
-      const allColors      = {}
+      const newPlanning   = {}
+      const allCategories = new Set()
+      const allColors     = {}
 
       rawData.forEach(day => {
         const date = parseDateFromId(day.id)
@@ -155,8 +198,8 @@ export const useDataStore = defineStore('data', () => {
         day.ressources.forEach(person => {
           const fullName = `${person.nom} ${person.prenom}`
           if (!newPlanning[fullName]) newPlanning[fullName] = {}
-          if (person.idPersonne && !nameToPersonId.value[fullName])
-            nameToPersonId.value[fullName] = person.idPersonne
+          if (person.idPersonne && !_nameToPersonId.value[fullName])
+            _nameToPersonId.value[fullName] = person.idPersonne
 
           const entries = analyzeActivities(person.activites || [])
           if (entries.length > 0) {
@@ -169,15 +212,17 @@ export const useDataStore = defineStore('data', () => {
         })
       })
 
-      planning.value   = newPlanning
-      persons.value    = Object.keys(newPlanning).sort()
+      _planning.value  = newPlanning
+      _persons.value   = Object.keys(newPlanning).sort()
       categories.value = [...allCategories].sort()
       colors.value     = allColors
 
-      console.log(`✅ Planning : ${persons.value.length} collaborateurs, ${rawData.length} jours`)
+      if (import.meta.env.DEV) {
+        console.log(`✅ Planning : ${_persons.value.length} collaborateurs, ${rawData.length} jours`)
+      }
     } catch (e) {
       error.value = e.message
-      console.error('❌ Firestore :', e)
+      if (import.meta.env.DEV) console.error('❌ Firestore :', e)
     } finally {
       loading.value = false
     }
@@ -189,61 +234,30 @@ export const useDataStore = defineStore('data', () => {
       snapshot.forEach(doc => {
         const data = doc.data()
         const id   = data.id || doc.id
-        personnesData.value[id] = data
+        _personnesData.value[id] = data
       })
-      console.log(`✅ Personnes : ${Object.keys(personnesData.value).length}`)
+      if (import.meta.env.DEV) {
+        console.log(`✅ Personnes : ${Object.keys(_personnesData.value).length}`)
+      }
     } catch (e) {
-      console.warn('⚠️ personnes :', e)
+      if (import.meta.env.DEV) console.warn('⚠️ personnes :', e)
     }
   }
 
   async function init() {
-    // Plage par défaut : 1 an
+    // Plage par défaut : 1 an glissant (formatage local, sans décalage UTC)
     const today      = new Date()
-    const oneYearAgo = new Date()
+    const oneYearAgo = new Date(today)
     oneYearAgo.setFullYear(today.getFullYear() - 1)
-    filterStart.value = oneYearAgo.toISOString().slice(0, 10)
-    filterEnd.value   = today.toISOString().slice(0, 10)
+    oneYearAgo.setDate(oneYearAgo.getDate() + 1)
+    filterStart.value = fmtDate(oneYearAgo)
+    filterEnd.value   = fmtDate(today)
 
     await Promise.all([loadPlanning(), loadPersonnes()])
     computeFiltered()
   }
 
-  /* ---- Filtre personnes actives ---- */
-
-  function activePersons() {
-    if (!filterActive.value) return persons.value
-    if (!Object.keys(personnesData.value).length) return persons.value
-
-    const parseDate = str => {
-      if (!str) return null
-      const [d, m, y] = str.trim().split(' ')
-      if (!d || !m || !y) return null
-      return new Date(+y, +m - 1, +d)
-    }
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const activeIds = new Set(
-      Object.values(personnesData.value)
-        .filter(p => {
-          const arrivee = parseDate(p.arrivee)
-          const depart  = parseDate(p.depart)
-          if (!arrivee || today < arrivee) return false
-          if (depart && today > depart) return false
-          return true
-        })
-        .map(p => p.id)
-    )
-
-    return persons.value.filter(name => {
-      const id = nameToPersonId.value[name]
-      return id && activeIds.has(id)
-    })
-  }
-
-  /* ---- Calcul des données filtrées ---- */
+  /* ── Calcul des données filtrées ── */
 
   function computeFiltered() {
     const fs = filterStart.value
@@ -251,13 +265,15 @@ export const useDataStore = defineStore('data', () => {
     const byCat = {}, byMonth = {}, byPerson = {}
     const ABS_CATS = new Set(['CP', 'Indisponible', 'Récup'])
 
-    for (const p of activePersons()) {
-      for (const d in planning.value[p]) {
+    for (const p of activePersonsList.value) {
+      const pData = _planning.value[p]
+      if (!pData) continue
+      for (const d in pData) {
         if (fs && d < fs) continue
         if (fe && d > fe) continue
-        const isSaturday = new Date(d).getDay() === 6
+        const isSaturday = new Date(d + 'T12:00:00').getDay() === 6
 
-        planning.value[p][d].forEach(e => {
+        pData[d].forEach(e => {
           if (isSaturday && ABS_CATS.has(e.categorie)) return
           byCat[e.categorie]     = (byCat[e.categorie] || 0) + 1
           byMonth[d.slice(0, 7)] = (byMonth[d.slice(0, 7)] || 0) + 1
@@ -273,7 +289,7 @@ export const useDataStore = defineStore('data', () => {
     result.byCategory = { samedi: { d: new Set(), persons: {} } }
     for (const p in byPerson) {
       for (const day in byPerson[p].details) {
-        if (new Date(day).getDay() !== 6) continue
+        if (new Date(day + 'T12:00:00').getDay() !== 6) continue
         const entries = byPerson[p].details[day].filter(e => {
           const cat = e.categorie.toLowerCase()
           return !cat.includes('astreinte') && cat !== 'cp' && cat !== 'indisponible'
@@ -290,9 +306,20 @@ export const useDataStore = defineStore('data', () => {
   }
 
   return {
-    planning, persons, categories, colors, personnesData,
-    loading, error, filtered,
-    filterStart, filterEnd, filterActive,
-    init, computeFiltered, activePersons,
+    // Données en lecture seule depuis l'extérieur
+    planning:      readonly(_planning),
+    persons:       readonly(_persons),
+    personnesData: readonly(_personnesData),
+    categories,
+    colors,
+    loading,
+    error,
+    filtered,
+    filterStart,
+    filterEnd,
+    filterActive,
+    init,
+    computeFiltered,
+    activePersons,
   }
 })

@@ -15,8 +15,10 @@
 <script setup>
 import { computed } from 'vue'
 import { useDataStore } from '@/stores/dataStore'
+import { useUiStore } from '@/stores/uiStore'
 
 const data = useDataStore()
+const ui   = useUiStore()
 
 const LIEU_GROUPS = {
   'Chez le client':       { cats: ['Matin','Midi','Aprem','Soir'], color: '#6366F1' },
@@ -40,9 +42,33 @@ const chartData = computed(() => {
       colors,
       legend: { position: 'bottom', fontSize: '12px' },
       dataLabels: { enabled: false },
-      plotOptions: { pie: { donut: { size: '65%' } } },
+      plotOptions: {
+        pie: {
+          donut: {
+            size: '65%',
+            labels: {
+              show: true,
+              total: {
+                show: true,
+                showAlways: true,
+                label: '',
+                formatter: (w) => w.globals.seriesTotals.reduce((a, b) => a + b, 0).toLocaleString('fr-FR'),
+              },
+              value: {
+                show: true,
+                showAlways: true,
+                fontSize: '20px',
+                fontWeight: '700',
+                color: ui.darkMode ? '#E0E2FF' : '#2B2D6E',
+                formatter: () => '',
+              },
+              name: { show: false },
+            },
+          },
+        },
+      },
       chart: { background: 'transparent' },
-      theme: { mode: 'light' },
+      theme: { mode: ui.darkMode ? 'dark' : 'light' },
     }
   }
 })

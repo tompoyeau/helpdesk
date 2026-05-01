@@ -8,15 +8,20 @@ import {
 } from 'firebase/auth'
 
 export const useAuthStore = defineStore('auth', () => {
-  const user    = ref(null)   // firebase User object ou null
-  const loading = ref(true)   // true tant qu'on attend onAuthStateChanged
+  const user    = ref(null)
+  const loading = ref(true)
   const error   = ref('')
 
-  /* ---- Initialisation : écoute l'état d'authentification ---- */
+  // Référence au listener pour pouvoir le nettoyer
+  let _unsubscribe = null
 
+  /* ── Initialisation ── */
   function init() {
+    // Nettoie un éventuel listener précédent (évite les fuites mémoire)
+    if (_unsubscribe) _unsubscribe()
+
     return new Promise(resolve => {
-      onAuthStateChanged(auth, u => {
+      _unsubscribe = onAuthStateChanged(auth, u => {
         user.value    = u
         loading.value = false
         resolve(u)
@@ -24,8 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
-  /* ---- Connexion ---- */
-
+  /* ── Connexion ── */
   async function signIn(email, password) {
     error.value   = ''
     loading.value = true
@@ -39,23 +43,28 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /* ---- Déconnexion ---- */
-
+  /* ── Déconnexion ── */
   async function signOut() {
-    await fbSignOut(auth)
-    user.value = null
+    try {
+      await fbSignOut(auth)
+    } catch (e) {
+      if (import.meta.env.DEV) console.error('signOut error:', e)
+    } finally {
+      // Réinitialise l'état local dans tous les cas
+      user.value  = null
+      error.value = ''
+    }
   }
 
-  /* ---- Traduction des codes d'erreur Firebase ---- */
-
+  /* ── Traduction des codes d'erreur Firebase ── */
   function mapError(code) {
     const msgs = {
-      'auth/invalid-email':         'Adresse email invalide.',
-      'auth/user-not-found':        'Aucun compte trouvé pour cet email.',
-      'auth/wrong-password':        'Mot de passe incorrect.',
-      'auth/invalid-credential':    'Email ou mot de passe incorrect.',
-      'auth/too-many-requests':     'Trop de tentatives. Réessayez plus tard.',
-      'auth/network-request-failed':'Erreur réseau. Vérifiez votre connexion.',
+      'auth/invalid-email':          'Adresse email invalide.',
+      'auth/user-not-found':         'Aucun compte trouvé pour cet email.',
+      'auth/wrong-password':         'Mot de passe incorrect.',
+      'auth/invalid-credential':     'Email ou mot de passe incorrect.',
+      'auth/too-many-requests':      'Trop de tentatives. Réessayez plus tard.',
+      'auth/network-request-failed': 'Erreur réseau. Vérifiez votre connexion.',
     }
     return msgs[code] || 'Une erreur est survenue. Réessayez.'
   }

@@ -952,6 +952,30 @@ a { text-decoration: none; color: inherit; }
 
 
 /* ============================================================
+   SKELETON LOADING — global
+   ============================================================ */
+
+@keyframes sk-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+.sk-bar {
+  background: var(--border);
+  border-radius: 6px;
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+.sk-circle {
+  background: var(--border);
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+.pd-sk-header {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+}
+.pd-sk-kpis {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+}
+
+/* ============================================================
    VUE COLLABORATEUR — Header & Stats
    ============================================================ */
 
@@ -1201,6 +1225,17 @@ a { text-decoration: none; color: inherit; }
   color: var(--text-header);
   min-width: 240px;
   justify-content: center;
+}
+
+.planning-period-picker {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  transition: background 0.15s;
+  user-select: none;
+}
+.planning-period-picker:hover {
+  background: rgba(255,255,255,0.12);
 }
 
 .planning-section { margin-bottom: 24px; }

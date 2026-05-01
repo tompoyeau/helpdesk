@@ -30,16 +30,7 @@
     </nav>
 
     <div class="flex items-center gap-2">
-      <div class="date-range-group desktop-only">
-        <span class="date-label">Du</span>
-        <input type="date" v-model="data.filterStart" class="date-input">
-        <span class="date-label">au</span>
-        <input type="date" v-model="data.filterEnd" class="date-input">
-      </div>
-      <button class="btn-primary desktop-only" @click="applyFilter">
-        <RefreshCw :size="12" />
-        Appliquer
-      </button>
+      <DateRangePicker class="desktop-only" />
       <button class="btn-icon mobile-only" @click="ui.dateSheetOpen = true">
         <Calendar :size="15" />
       </button>
@@ -61,16 +52,11 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
-import { useDataStore } from '@/stores/dataStore'
 import { useAuthStore } from '@/stores/authStore'
-import { Users, CalendarDays, LayoutDashboard, RefreshCw, Calendar, Moon, Sun, Tag, LogOut } from 'lucide-vue-next'
+import { Users, CalendarDays, LayoutDashboard, Calendar, Moon, Sun, Tag, LogOut } from 'lucide-vue-next'
+import DateRangePicker from '@/components/layout/DateRangePicker.vue'
 
 const route = useRoute()
 const ui    = useUiStore()
-const data  = useDataStore()
 const auth  = useAuthStore()
-
-function applyFilter() {
-  data.computeFiltered()
-}
 </script>

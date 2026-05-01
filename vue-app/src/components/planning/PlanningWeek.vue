@@ -6,10 +6,13 @@
         <button class="btn-icon" @click="weekOffset--">
           <ChevronLeft :size="16" />
         </button>
-        <div class="planning-period">
-          <Calendar :size="14" />
-          <span>Semaine du {{ weekStart.date }} {{ weekStart.month }} au {{ weekEnd.date }} {{ weekEnd.month }}</span>
-        </div>
+
+        <WeekPicker
+          :week-offset="weekOffset"
+          :week-dates="weekDates"
+          @update:week-offset="weekOffset = $event"
+        />
+
         <button class="btn-icon" @click="weekOffset++">
           <ChevronRight :size="16" />
         </button>
@@ -83,13 +86,14 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useDataStore } from '@/stores/dataStore'
-import { ChevronLeft, ChevronRight, Calendar, CalendarCheck, Star, Users } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, CalendarCheck, Star, Users } from 'lucide-vue-next'
 import PlanningRow from './PlanningRow.vue'
-import DayModal from './DayModal.vue'
+import DayModal    from './DayModal.vue'
+import WeekPicker  from './WeekPicker.vue'
 
 const data = useDataStore()
 
-const weekOffset = ref(0)
+const weekOffset  = ref(0)
 const modalOpen   = ref(false)
 const modalPerson = ref('')
 const modalDate   = ref('')
@@ -144,11 +148,8 @@ function isToday(date) {
   return formatDate(date) === formatDate(new Date())
 }
 
-const weekDates  = computed(() => getWeekDates(weekOffset.value))
-const weekStart  = computed(() => formatDateLabel(weekDates.value[0]))
-const weekEnd    = computed(() => formatDateLabel(weekDates.value[4]))
-
-const activePeople    = computed(() => data.activePersons())
-const favoritePeople  = computed(() => activePeople.value.filter(p => favorites.value.includes(p)))
-const otherPeople     = computed(() => activePeople.value.filter(p => !favorites.value.includes(p)))
+const weekDates     = computed(() => getWeekDates(weekOffset.value))
+const activePeople  = computed(() => data.activePersons())
+const favoritePeople = computed(() => activePeople.value.filter(p => favorites.value.includes(p)))
+const otherPeople    = computed(() => activePeople.value.filter(p => !favorites.value.includes(p)))
 </script>

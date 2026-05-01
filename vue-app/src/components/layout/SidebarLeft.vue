@@ -68,17 +68,6 @@
 </template>
 
 <style scoped>
-@keyframes sk-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.45; }
-}
-
-.sk-bar {
-  background: var(--border);
-  border-radius: 6px;
-  animation: sk-pulse 1.4s ease-in-out infinite;
-}
-
 .sk-controls {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);

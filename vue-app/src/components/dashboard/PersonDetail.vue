@@ -1,5 +1,5 @@
 <template>
-  <div v-if="d" class="content-card" style="font-size:0.75rem">
+  <div v-if="d && ready" class="content-card" style="font-size:0.75rem">
 
     <!-- ── En-tête personne ── -->
     <div class="person-header">
@@ -195,13 +195,37 @@
     <DayModal v-model="modalOpen" :person="personName" :date-str="modalDate" />
   </div>
 
+  <!-- Skeleton premier rendu -->
+  <div v-else-if="!ready" class="content-card">
+    <div class="pd-sk-header">
+      <div class="sk-circle" style="width:44px;height:44px;border-radius:50%;flex-shrink:0"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div class="sk-bar" style="width:40%;height:14px"></div>
+        <div class="sk-bar" style="width:60%;height:10px"></div>
+      </div>
+    </div>
+    <div class="pd-sk-kpis">
+      <div v-for="i in 4" :key="i" class="sk-bar" style="height:64px;border-radius:12px"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div class="sk-bar" style="width:50%;height:11px;margin-bottom:4px"></div>
+        <div v-for="i in 5" :key="i" class="sk-bar" style="height:28px;border-radius:8px"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="sk-bar" style="width:55%;height:11px;margin-bottom:4px"></div>
+        <div v-for="i in 5" :key="i" class="sk-bar" style="height:36px;border-radius:8px"></div>
+      </div>
+    </div>
+  </div>
+
   <div v-else class="content-card" style="padding:24px;color:var(--text-muted)">
     Aucune donnée pour ce collaborateur sur la période sélectionnée.
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
 import DayModal from '@/components/planning/DayModal.vue'
@@ -209,6 +233,10 @@ import DayModal from '@/components/planning/DayModal.vue'
 const props  = defineProps({ personName: { type: String, required: true } })
 const data   = useDataStore()
 const router = useRouter()
+
+// Laisse le navigateur peindre le skeleton avant de lancer les computed lourds
+const ready = ref(false)
+onMounted(() => nextTick(() => { ready.value = true }))
 
 const modalOpen  = ref(false)
 const modalDate  = ref('')

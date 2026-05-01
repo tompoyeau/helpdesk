@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard - CAI</title>
+  <script>
+    // Solution SPA pour GitHub Pages
+    // Quand GitHub Pages renvoie une 404 sur une route Vue,
+    // on encode le chemin dans l'URL et on redirige vers index.html
+    // Le "1" = nombre de segments à conserver (pour /helpdesk/)
+    var pathSegmentsToKeep = 1
+    var l = window.location
+    l.replace(
+      l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+      l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?p=/' +
+      l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+      (l.search ? '&q=' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+      l.hash
+    )
+  </script>
+</head>
+<body></body>
+</html>
