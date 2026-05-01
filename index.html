@@ -41,6 +41,18 @@
       </div>
     </div>
 
+    <!-- Navigation centrale -->
+    <nav class="header-nav">
+      <button id="viewPlanning" class="header-nav-btn active">
+        <i data-lucide="calendar-days" style="width:13px;height:13px;"></i>
+        <span class="hide-xs">Planning</span>
+      </button>
+      <button id="viewGlobal" class="header-nav-btn">
+        <i data-lucide="layout-dashboard" style="width:13px;height:13px;"></i>
+        <span class="hide-xs">Tableau de bord</span>
+      </button>
+    </nav>
+
     <div class="flex items-center gap-2">
       <!-- Date range (masqué sur mobile, visible via sheet) -->
       <div class="date-range-group desktop-only">
@@ -93,16 +105,6 @@
       </div>
 
       <div class="p-3" style="border-bottom:1px solid var(--border)">
-        <button id="viewGlobal" class="btn-dashboard w-full mb-2.5">
-          <i data-lucide="layout-dashboard" style="width:13px;height:13px;"></i>
-          Tableau de bord
-        </button>
-        
-        <button id="viewPlanning" class="btn-dashboard w-full mb-2.5">
-          <i data-lucide="calendar-days" style="width:13px;height:13px;"></i>
-          Planning - Work in progress
-        </button>
-
         <label class="toggle-label flex items-center gap-2 cursor-pointer">
           <input type="checkbox" id="filterActive" checked class="toggle-input">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -131,15 +133,14 @@
     <main class="layout-main flex flex-col" style="background:var(--bg-surface)">
 
       <!-- VUE PLANNING -->
-      <section id="planningView">
+      <section id="planningView" style="display:none">
         <div id="planningContent"></div>
       </section>
 
-      <!-- CHARTS -->
+      <!-- VUE DASHBOARD -->
       <section id="dashboardView">
         <div id="chartsBlock" class="grid charts-container" style="grid-template-columns:1fr 1fr"></div>
-      
-        <!-- DETAILS -->
+
         <div style="padding:12px 12px 12px">
           <div id="center" class="content-card text-xs">Chargement…</div>
         </div>
@@ -187,38 +188,11 @@
   <div id="sheetBackdrop" class="drawer-backdrop" onclick="closeDateSheet()"></div>
 
 
-  <!-- OVERLAY DE LOGIN -->
-  <div id="loginOverlay">
-    <div class="login-card">
-      <div class="login-logo">
-        <svg width="22" height="22" viewBox="0 0 18 18" fill="none">
-          <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
-          <rect x="11" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.55"/>
-          <rect x="1" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.55"/>
-          <rect x="11" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
-        </svg>
-      </div>
-      <h2 class="login-title">Dashboard - CAI</h2>
-      <p class="login-subtitle">Accès restreint — entrez le mot de passe pour continuer</p>
-      <form id="loginForm">
-        <div class="login-field">
-          <i data-lucide="lock" class="login-field-icon" style="width:14px;height:14px"></i>
-          <input id="loginPassword" type="password" placeholder="Mot de passe" class="login-input" autocomplete="current-password">
-        </div>
-        <p id="loginError" class="login-error" style="display:none">
-          <i data-lucide="alert-circle" style="width:13px;height:13px;flex-shrink:0"></i>
-          Mot de passe incorrect
-        </p>
-        <button id="loginBtn" type="submit" class="login-btn">Accéder</button>
-      </form>
-    </div>
-  </div>
+  <!-- Modal détail journée planning -->
+  <div id="planningModal" class="planning-modal"></div>
 
-  <!-- JS -->
-  <script src="js/data.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/charts.js"></script>
-  <script src="js/planning.js"></script>
+  <!-- JS — point d'entrée unique, tous les imports sont gérés par main.js -->
+  <script type="module" src="js/main.js"></script>
 
 </body>
 </html>

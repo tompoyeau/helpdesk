@@ -1,296 +1,323 @@
 /* ============================================================
-   DATA.JS — Chargement, filtrage et calcul des données planning
-   Expose les globaux : planning, persons, categories, colors,
-   filtered, els, applyPersonFilter, detectActivePersons
+   DATA.JS — Chargement depuis Firestore + état global partagé
    ============================================================ */
 
+import { db } from './firebase-config.js';
+import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js';
 
 /* ============================================================
-   ÉTAT GLOBAL
+   ÉTAT GLOBAL — exporté pour les autres modules (live bindings)
    ============================================================ */
 
-let planning   = null; // Données brutes du JSON
-let persons    = [];   // Liste triée des collaborateurs
-let categories = [];   // Liste triée des catégories présentes dans le JSON
-let colors     = {};   // Map catégorie → couleur hex
-let filtered   = null; // Résultat du dernier computeFiltered()
+export let planning     = null;
+export let persons      = [];
+export let categories   = [];
+export let colors       = {};
+export let filtered     = null;
+export let personnesData = {}; // idPersonne → données de la personne
 
+let nameToPersonId = {}; // "NOM Prenom" → idPersonne
 
-/* ============================================================
-   RÉFÉRENCES DOM PARTAGÉES
-   ============================================================ */
-
-const els = {
-  fs:     document.getElementById("filterStart"), // Input date début
-  fe:     document.getElementById("filterEnd"),   // Input date fin
-  center: document.getElementById("center")       // Zone de contenu principal
+export const els = {
+  fs:     document.getElementById("filterStart"),
+  fe:     document.getElementById("filterEnd"),
+  center: document.getElementById("center")
 };
 
-
 /* ============================================================
-   INITIALISATION DE LA PLAGE DE DATES PAR DÉFAUT
-   Par défaut : 1 an glissant jusqu'à aujourd'hui.
+   MAPPAGE DES ACTIVITÉS FIREBASE
    ============================================================ */
 
-function setDefaultRange() {
+const ACTIVITY_MAPPING = {
+  //RUN chez le client
+  '0':  { categorie: 'Matin',            couleur: 'rgba(174, 219, 255, 1)' },
+  '1':  { categorie: 'Midi',             couleur: 'rgba(149, 207, 255, 1)' },
+  '15': { categorie: 'Aprem',            couleur: 'rgba(89,  180, 254, 1)' },
+  '2':  { categorie: 'Soir',             couleur: 'rgba(86,  166, 233, 1)' },
+
+  // RUN en TLT
+  '20': { categorie: 'TLT Matin',        couleur: 'rgba(215, 190, 158, 1)' },
+  '21': { categorie: 'TLT Midi',         couleur: 'rgba(201, 167, 123, 1)' },
+  '22': { categorie: 'TLT APREM',        couleur: 'rgba(188, 145, 87,  1)' },
+  '23': { categorie: 'TLT Soir',         couleur: 'rgba(163, 121, 64,  1)' },
+
+  // RUN TLT Agence
+  '12': { categorie: 'TLT Agence Matin', couleur: 'rgba(225, 213, 253, 1)' },
+  '13': { categorie: 'TLT Agence Midi',  couleur: 'rgba(210, 192, 251, 1)' },
+  '17': { categorie: 'TLT Agence APREM', couleur: 'rgba(182, 153, 244, 1)' },
+  '14': { categorie: 'TLT Agence Soir',  couleur: 'rgba(156, 116, 243, 1)' },
+
+  // Journées vertes
+  '9':  { categorie: 'Agence Matin',     couleur: 'rgba(227, 255, 171, 1)' },
+  '10': { categorie: 'Agence Midi',      couleur: 'rgba(209, 243, 142, 1)' },
+  '16': { categorie: 'Agence APREM',     couleur: 'rgba(185, 231, 94,  1)' },
+  '11': { categorie: 'Agence Soir',      couleur: 'rgba(154, 192, 77,  1)' },
+
+  // Absent
+  '30': { categorie: 'CP',              couleur: 'rgba(68,  0,   255, 1)' },
+  '6':  { categorie: 'Indisponible',    couleur: 'rgba(176, 176, 176, 1)' },
+  '8':  { categorie: 'Récup',           couleur: 'rgba(230, 172, 216, 1)' },
+
+  // Projet
+  '24': { categorie: 'Pilote',          couleur: 'rgba(226, 53,  73,  1)' },
+  '26': { categorie: 'PiloteBO',        couleur: 'rgba(253, 224, 71,  1)' },
+  '28': { categorie: 'MatinW11',        couleur: 'rgba(53,  225, 167, 1)' },
+  '29': { categorie: 'SoirW11',        couleur: 'rgba(22,  114, 83,  1)' },
+
+  // Autres
+  '5':  { categorie: 'Formation',       couleur: 'rgba(254, 228, 191, 1)' },
+  '7':  { categorie: 'Astreinte',       couleur: 'rgba(238, 138, 138, 1)' },
+  '27': { categorie: 'ApremRenf',       couleur: 'rgba(255, 0,   255, 1)' },
+  '31': { categorie: 'RH',              couleur: 'rgba(255, 165, 0,   1)' },
+};
+
+// Créneaux horaires (15 min, de 8h00 à 19h00 — 44 points pour 43 slots)
+const TIME_SLOTS = [];
+for (let i = 0; i <= 44; i++) {
+  const totalMin = 8 * 60 + i * 15;
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  TIME_SLOTS.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+}
+
+/* ============================================================
+   UTILITAIRES
+   ============================================================ */
+
+export function setDefaultRange() {
   const today      = new Date();
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(today.getFullYear() - 1);
-
   els.fs.value = oneYearAgo.toISOString().slice(0, 10);
   els.fe.value = today.toISOString().slice(0, 10);
 }
 
-
-/* ============================================================
-   CRYPTO — Déchiffrement AES-256-GCM côté navigateur
-   Utilise l'API Web Crypto native (aucune dépendance externe).
-   ============================================================ */
-
-/** Convertit une chaîne hex en Uint8Array */
-function hexToBytes(hex) {
-  const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++)
-    arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  return arr;
+function parseDateFromId(id) {
+  if (!id || id.length !== 8) return null;
+  const d = id.slice(0, 2);
+  const m = id.slice(2, 4);
+  const y = id.slice(4, 8);
+  return `${y}-${m}-${d}`;
 }
 
-/**
- * Déchiffre le contenu du fichier .enc.json avec le mot de passe fourni.
- * @param {Object} enc  { v, salt, iv, tag, data }
- * @param {string} password
- * @returns {Promise<string>}  Le JSON en clair, ou lève une erreur si mdp incorrect.
- */
-async function decryptPlanning(enc, password) {
-  const te       = new TextEncoder();
-  const saltBytes = hexToBytes(enc.salt);
-  const ivBytes   = hexToBytes(enc.iv);
-  const tagBytes  = hexToBytes(enc.tag);
-  const ctBytes   = Uint8Array.from(atob(enc.data), c => c.charCodeAt(0));
+function analyzeActivities(activites) {
+  if (!activites || !Array.isArray(activites) || activites.length === 0) return [];
 
-  // AES-GCM attend ciphertext + tag concaténés
-  const ctWithTag = new Uint8Array(ctBytes.length + tagBytes.length);
-  ctWithTag.set(ctBytes);
-  ctWithTag.set(tagBytes, ctBytes.length);
+  const entries = [];
+  let currentActivity = null;
+  let startIndex = null;
 
-  // Dérivation PBKDF2 → même algo que encrypt.js
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw", te.encode(password), "PBKDF2", false, ["deriveKey"]
-  );
-  const key = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: saltBytes, iterations: 310_000, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"]
-  );
+  for (let i = 0; i < activites.length; i++) {
+    const activity = activites[i];
 
-  const plainBuffer = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: ivBytes, tagLength: 128 },
-    key,
-    ctWithTag
-  );
-
-  return new TextDecoder().decode(plainBuffer);
-}
-
-
-/* ============================================================
-   AUTHENTIFICATION — Écran de login
-   ============================================================ */
-
-const SESSION_KEY = "planning_pwd"; // Clé sessionStorage
-
-/** Lance le déchiffrement depuis le mot de passe en session ou via le formulaire. */
-async function autoLoad() {
-  setDefaultRange();
-
-  // Tente de récupérer le fichier chiffré
-  let enc;
-  try {
-    const r = await fetch("planning.enc.json", { cache: "no-store" });
-    if (!r.ok) throw new Error("Fichier introuvable");
-    enc = await r.json();
-  } catch {
-    els.center.innerHTML = `<div style="padding:16px;background:#FEF3C7;border-radius:12px;color:#92400E">
-      Aucun fichier <code>planning.enc.json</code> détecté.
-    </div>`;
-    return;
-  }
-
-  // Mot de passe déjà en session ? On tente directement.
-  const cached = sessionStorage.getItem(SESSION_KEY);
-  if (cached) {
-    const ok = await tryUnlock(enc, cached, false);
-    if (ok) return;
-    sessionStorage.removeItem(SESSION_KEY); // Session expirée / mdp changé
-  }
-
-  showLoginScreen(enc);
-}
-
-/** Affiche l'overlay de login. */
-function showLoginScreen(enc) {
-  const overlay = document.getElementById("loginOverlay");
-  overlay.style.display = "flex";
-  overlay.style.animation = "loginFadeIn 0.25s ease";
-
-  const form  = document.getElementById("loginForm");
-  const input = document.getElementById("loginPassword");
-  const error = document.getElementById("loginError");
-  const btn   = document.getElementById("loginBtn");
-
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    btn.disabled = true;
-    btn.textContent = "Vérification…";
-    error.style.display = "none";
-
-    const ok = await tryUnlock(enc, input.value, true);
-
-    if (!ok) {
-      error.style.display = "block";
-      input.value = "";
-      input.focus();
+    if (activity && activity !== '') {
+      if (currentActivity === null || currentActivity !== activity) {
+        if (currentActivity !== null && startIndex !== null) {
+          const mapping = ACTIVITY_MAPPING[currentActivity];
+          if (mapping) {
+            entries.push({
+              categorie: mapping.categorie,
+              horaire:   `${TIME_SLOTS[startIndex] || '08:00'}-${TIME_SLOTS[i] || TIME_SLOTS[TIME_SLOTS.length - 1]}`,
+              couleur:   mapping.couleur,
+              slots:     i - startIndex
+            });
+          }
+        }
+        currentActivity = activity;
+        startIndex = i;
+      }
+    } else {
+      if (currentActivity !== null && startIndex !== null) {
+        const mapping = ACTIVITY_MAPPING[currentActivity];
+        if (mapping) {
+          entries.push({
+            categorie: mapping.categorie,
+            horaire:   `${TIME_SLOTS[startIndex] || '08:00'}-${TIME_SLOTS[i] || TIME_SLOTS[TIME_SLOTS.length - 1]}`,
+            couleur:   mapping.couleur,
+            slots:     i - startIndex
+          });
+        }
+        currentActivity = null;
+        startIndex = null;
+      }
     }
+  }
 
-    btn.disabled = false;
-    btn.textContent = "Accéder";
-  };
+  if (currentActivity !== null && startIndex !== null) {
+    const mapping = ACTIVITY_MAPPING[currentActivity];
+    if (mapping) {
+      const endIdx = Math.min(activites.length, TIME_SLOTS.length - 1);
+      entries.push({
+        categorie: mapping.categorie,
+        horaire:   `${TIME_SLOTS[startIndex] || '08:00'}-${TIME_SLOTS[endIdx]}`,
+        couleur:   mapping.couleur,
+        slots:     endIdx - startIndex
+      });
+    }
+  }
 
-  input.focus();
+  return entries;
 }
 
-/**
- * Tente de déchiffrer avec le mot de passe fourni.
- * @returns {boolean}  true si succès.
- */
-async function tryUnlock(enc, password, saveSession) {
+/* ============================================================
+   CHARGEMENT FIRESTORE
+   ============================================================ */
+
+async function loadPlanningFromFirestore() {
   try {
-    const json = await decryptPlanning(enc, password);
-    planning = JSON.parse(json);
+    els.center.innerHTML = `
+      <div style="padding:32px;text-align:center">
+        <div style="display:inline-block;width:48px;height:48px;border:4px solid #6366F1;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></div>
+        <p style="margin-top:16px;color:var(--text-secondary);font-size:0.875rem">Chargement depuis Firebase…</p>
+      </div>
+      <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+    `;
 
-    if (saveSession) sessionStorage.setItem(SESSION_KEY, password);
+    const snapshot = await getDocs(collection(db, 'plannings'));
+    const rawData  = [];
+    snapshot.forEach(doc => rawData.push({ id: doc.id, ...doc.data() }));
 
-    // Masque l'overlay avec une animation
-    const overlay = document.getElementById("loginOverlay");
-    overlay.style.animation = "loginFadeOut 0.2s ease forwards";
-    setTimeout(() => { overlay.style.display = "none"; }, 200);
+    planning = {};
+    const allCategories = new Set();
+    const allColors     = {};
 
-    initData();
-    computeFiltered();
-    renderLists();
-    renderGlobal();
-    updateCharts();
+    rawData.forEach(day => {
+      const date = parseDateFromId(day.id);
+      if (!date || !Array.isArray(day.ressources)) return;
+
+      day.ressources.forEach(person => {
+        const fullName = `${person.nom} ${person.prenom}`;
+        if (!planning[fullName]) planning[fullName] = {};
+
+        // Mémoriser l'association nom ↔ idPersonne
+        if (person.idPersonne && !nameToPersonId[fullName])
+          nameToPersonId[fullName] = person.idPersonne;
+
+        const entries = analyzeActivities(person.activites || []);
+        if (entries.length > 0) {
+          planning[fullName][date] = entries;
+          entries.forEach(e => {
+            allCategories.add(e.categorie);
+            if (!allColors[e.categorie]) allColors[e.categorie] = e.couleur;
+          });
+        }
+      });
+    });
+
+    persons    = Object.keys(planning).sort();
+    categories = [...allCategories].sort();
+    colors     = allColors;
+
+    console.log(`✅ Planning chargé : ${persons.length} collaborateurs, ${rawData.length} jours`);
     return true;
-  } catch {
-    return false; // Mauvais mot de passe = déchiffrement échoue
+
+  } catch (error) {
+    console.error('❌ Erreur Firestore :', error);
+    els.center.innerHTML = `
+      <div style="padding:24px;background:#FEF3C7;border-radius:12px;color:#92400E">
+        <strong>Erreur de chargement Firebase</strong><br><br>${error.message}
+      </div>
+    `;
+    return false;
   }
 }
 
-
 /* ============================================================
-   EXTRACTION DES MÉTADONNÉES (personnes, catégories, couleurs)
-   Appelée une seule fois après le chargement du JSON.
+   CHARGEMENT COLLECTION PERSONNES
    ============================================================ */
 
-function initData() {
-  persons = Object.keys(planning).sort();
-
-  const catSet = new Set();
-  const colMap = {};
-
-  for (const p in planning)
-    for (const d in planning[p])
-      planning[p][d].forEach(e => {
-        catSet.add(e.categorie);
-        if (!colMap[e.categorie]) colMap[e.categorie] = e.couleur;
-      });
-
-  categories = [...catSet].sort();
-  colors     = colMap;
+async function loadPersonnes() {
+  try {
+    const snapshot = await getDocs(collection(db, 'personnes'));
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const id   = data.id || doc.id;
+      personnesData[id] = data;
+    });
+    console.log(`✅ Personnes chargées : ${Object.keys(personnesData).length}`);
+  } catch (e) {
+    console.warn('⚠️ Impossible de charger la collection personnes :', e);
+  }
 }
 
+/* ============================================================
+   INITIALISATION — appelée par main.js
+   Retourne true si les données sont prêtes, false sinon.
+   ============================================================ */
+
+export async function autoLoad() {
+  setDefaultRange();
+  const [planningOk] = await Promise.all([
+    loadPlanningFromFirestore(),
+    loadPersonnes()
+  ]);
+  return planningOk;
+}
 
 /* ============================================================
    FILTRE DES COLLABORATEURS ACTIFS
-   Source unique de vérité : lit directement la checkbox.
-   Retourne la liste des collaborateurs à inclure (tous si décoché).
    ============================================================ */
 
-function applyPersonFilter() {
-  const isChecked = document.getElementById("filterActive").checked;
+export function applyPersonFilter() {
+  const isChecked = document.getElementById("filterActive")?.checked;
   if (!isChecked) return persons;
-  return detectActivePersons();
+
+  // Si la collection personnes n'est pas encore chargée, tout afficher
+  if (!Object.keys(personnesData).length) return persons;
+
+  // Parse "DD MM YYYY" → Date
+  const parsePersonDate = str => {
+    if (!str) return null;
+    const [d, m, y] = str.trim().split(' ');
+    if (!d || !m || !y) return null;
+    return new Date(+y, +m - 1, +d);
+  };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Actif si aujourd'hui est entre arrivee et depart (depart absent = toujours actif)
+  const activeIds = new Set(
+    Object.values(personnesData)
+      .filter(p => {
+        const arrivee = parsePersonDate(p.arrivee);
+        const depart  = parsePersonDate(p.depart);
+        if (!arrivee) return false;
+        if (today < arrivee) return false;
+        if (depart && today > depart) return false;
+        return true;
+      })
+      .map(p => p.id)
+  );
+
+  return persons.filter(name => {
+    const id = nameToPersonId[name];
+    return id && activeIds.has(id);
+  });
 }
-
-function detectActivePersons() {
-  // Si on est samedi (6) ou dimanche (0), on cherche le vendredi de la semaine courante
-  // pour ne pas retourner une liste vide les week-ends.
-  const ref     = new Date();
-  const day     = ref.getDay(); // 0=dim, 6=sam
-  if (day === 0) ref.setDate(ref.getDate() - 2); // dimanche → vendredi
-  if (day === 6) ref.setDate(ref.getDate() - 1); // samedi   → vendredi
-
-  const dateRef = ref.toISOString().slice(0, 10);
-  const actives = new Set();
-
-  for (const p in planning)
-    if (planning[p][dateRef]?.length > 0)
-      actives.add(p);
-
-  // Si le vendredi est aussi vide (jour férié, etc.), on remonte
-  // jusqu'à trouver un jour avec des données (max 14 jours en arrière)
-  if (actives.size === 0) {
-    for (let i = 1; i <= 14; i++) {
-      const d = new Date(ref);
-      d.setDate(d.getDate() - i);
-      if (d.getDay() === 0 || d.getDay() === 6) continue; // ignore week-ends
-      const iso = d.toISOString().slice(0, 10);
-      for (const p in planning)
-        if (planning[p][iso]?.length > 0)
-          actives.add(p);
-      if (actives.size > 0) break;
-    }
-  }
-
-  return [...actives].sort();
-}
-
 
 /* ============================================================
    CALCUL DES DONNÉES FILTRÉES
-   Agrège les entrées du planning selon la plage de dates
-   et le filtre de personnes actif.
-
-   Produit filtered :
-     - byCat      : { categorie → nb entrées }
-     - byMonth    : { "YYYY-MM" → nb entrées }  (réservé pour les graphiques)
-     - byPerson   : { personne → { details: { date → [entrées] } } }
-     - byCategory : { "samedi" → { d: Set<date>, persons: { personne → { days: Set<date> } } } }
    ============================================================ */
 
-function computeFiltered() {
+export function computeFiltered() {
   const fs = els.fs.value;
   const fe = els.fe.value;
 
   const byCat = {}, byMonth = {}, byPerson = {};
-
-  const ABS_CATS = new Set(["CP","Indisponible","Récup"]);
+  const ABS_CATS = new Set(["CP", "Indisponible", "Récup"]);
 
   for (const p of applyPersonFilter())
     for (const d in planning[p]) {
       if (fs && d < fs) continue;
       if (fe && d > fe) continue;
 
-      // Exclut les absences tombant un samedi (CP/Indispo/Récup le week-end ne comptent pas)
       const isSaturday = new Date(d).getDay() === 6;
 
       planning[p][d].forEach(e => {
         if (isSaturday && ABS_CATS.has(e.categorie)) return;
 
-        byCat[e.categorie] = (byCat[e.categorie] || 0) + 1;
-
+        byCat[e.categorie]    = (byCat[e.categorie] || 0) + 1;
         byMonth[d.slice(0, 7)] = (byMonth[d.slice(0, 7)] || 0) + 1;
 
         byPerson[p] = byPerson[p] || { details: {} };
@@ -300,11 +327,8 @@ function computeFiltered() {
 
   filtered = { byCat, byMonth, byPerson };
 
-  // --- Catégorie calculée : Samedis travaillés (hors astreinte) ---
-  // Stocké dans filtered.byCategory car absent du JSON brut.
-  filtered.byCategory = {
-    samedi: { d: new Set(), persons: {} }
-  };
+  // Samedis travaillés (hors astreinte / absence)
+  filtered.byCategory = { samedi: { d: new Set(), persons: {} } };
 
   for (const p in byPerson) {
     for (const day in byPerson[p].details) {
@@ -312,25 +336,14 @@ function computeFiltered() {
 
       const entries = byPerson[p].details[day].filter(e => {
         const cat = e.categorie.toLowerCase();
-        return !cat.includes("astreinte")
-            && cat !== "cp"
-            && cat !== "indisponible";
+        return !cat.includes("astreinte") && cat !== "cp" && cat !== "indisponible";
       });
       if (!entries.length) continue;
 
       filtered.byCategory.samedi.d.add(day);
-
       if (!filtered.byCategory.samedi.persons[p])
         filtered.byCategory.samedi.persons[p] = { days: new Set() };
-
       filtered.byCategory.samedi.persons[p].days.add(day);
     }
   }
 }
-
-
-/* ============================================================
-   ÉVÉNEMENTS
-   ============================================================ */
-
-document.addEventListener("DOMContentLoaded", autoLoad);

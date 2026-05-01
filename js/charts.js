@@ -1,26 +1,21 @@
 /* ============================================================
    CHARTS.JS — Graphiques ApexCharts + KPIs tableau de bord
-
-   Dépend de : filtered, colors (data.js)
-   Éléments DOM : #chartsBlock, #center (via renderGlobal)
    ============================================================ */
 
-let chartDonut = null; // Instance donut "répartition lieux"
-let chartBar   = null; // Instance bar "activité mensuelle"
+import { filtered, colors } from './data.js';
 
+let chartDonut = null;
 
 /* ============================================================
    GROUPES DE LIEUX
-   Regroupe les catégories brutes en familles lisibles.
    ============================================================ */
 
 const LIEU_GROUPS = {
-  "Chez le client":       { cats: ["Matin","Midi","APREM","Soir"],                              color: "#6366F1" },
-  "Télétravail domicile": { cats: ["TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir"],      color: "#22D3EE" },
-  "Télétravail agence":   { cats: ["TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"],      color: "#A78BFA" },
-  "À l'agence":           { cats: ["ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir"],      color: "#34D399" }
+  "Chez le client":       { cats: ["Matin","Midi","Aprem","Soir"],                                                                    color: "#6366F1" },
+  "Télétravail domicile": { cats: ["TLT Matin","TLT Midi","TLT APREM","TLT Soir"],                                                   color: "#22D3EE" },
+  "Télétravail agence":   { cats: ["TLT Agence Matin","TLT Agence Midi","TLT Agence APREM","TLT Agence Soir","ApremRenf"],            color: "#A78BFA" },
+  "À l'agence":           { cats: ["Agence Matin","Agence Midi","Agence APREM","Agence Soir"],                                        color: "#34D399" }
 };
-
 
 /* ============================================================
    CALCULS AGRÉGÉS
@@ -40,34 +35,21 @@ function computeByLieu() {
   return result;
 }
 
-function computeByMonth() {
-  const ABSENCE_CATS = new Set(["CP","Indisponible","Récup"]);
-  const byMonth = {};
-  for (const p in filtered.byPerson)
-    for (const day in filtered.byPerson[p].details) {
-      const hasWork = filtered.byPerson[p].details[day].some(e => !ABSENCE_CATS.has(e.categorie));
-      if (!hasWork) continue;
-      const month = day.slice(0, 7);
-      byMonth[month] = (byMonth[month] || 0) + 1;
-    }
-  return byMonth;
-}
-
-function computeKPIs() {
+export function computeKPIs() {
   const TLT_CATS = new Set([
-    "TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir",
-    "TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf"
+    "TLT Matin","TLT Midi","TLT APREM","TLT Soir",
+    "TLT Agence Matin","TLT Agence Midi","TLT Agence APREM","TLT Agence Soir","ApremRenf"
   ]);
   const WORK_CATS = new Set([
-    "Matin","Midi","APREM","Soir",
-    "TLTDOMMatin","TLTDOMMidi","TLTDOMAPREM","TLTDOMSoir",
-    "TLTMatin","TLTMidi","TLTAPREM","TLTSoir","ApremRenf",
-    "ApsideMatin","ApsideMidi","ApsideAPREM","ApsideSoir",
-    "Pilote","PiloteBO","Formation","Astreinte"
+    "Matin","Midi","Aprem","Soir",
+    "TLT Matin","TLT Midi","TLT APREM","TLT Soir",
+    "TLT Agence Matin","TLT Agence Midi","TLT Agence APREM","TLT Agence Soir","ApremRenf",
+    "Agence Matin","Agence Midi","Agence APREM","Agence Soir",
+    "Pilote","PiloteBO","MatinW11","SoirW11","Formation","Astreinte"
   ]);
 
   let totalWorkDays = 0, tltDays = 0;
-  const personDays  = {};
+  const personDays = {};
 
   for (const p in filtered.byPerson) {
     const days = new Set();
@@ -83,22 +65,20 @@ function computeKPIs() {
 
   const nbPersons = Object.keys(personDays).length;
   const tauxTlt   = totalWorkDays > 0 ? Math.round(tltDays / totalWorkDays * 100) : 0;
-  const topPerson = Object.entries(personDays).sort((a,b) => b[1]-a[1])[0] || null;
+  const topPerson = Object.entries(personDays).sort((a, b) => b[1] - a[1])[0] || null;
 
   return { nbPersons, totalWorkDays, tauxTlt, topPerson };
 }
-
 
 /* ============================================================
    GRAPHIQUES
    ============================================================ */
 
-function updateCharts() {
+export function updateCharts() {
   if (!filtered) return;
   const block = document.getElementById("chartsBlock");
   if (!block || block.style.display === "none") return;
 
-  // Crée les conteneurs si absents
   if (!document.getElementById("chartDonutEl")) {
     block.innerHTML = `
       <div class="chart-card" style="grid-column:1/-1">
@@ -154,15 +134,12 @@ function _renderDonut() {
             show: true,
             total: {
               show: true, label: "Total",
-              fontSize: "11px",
-              fontFamily: "'DM Sans', sans-serif",
-              color: c.text,
-              formatter: w => w.globals.seriesTotals.reduce((a,b) => a+b, 0).toLocaleString("fr-FR"),
+              fontSize: "11px", fontFamily: "'DM Sans', sans-serif", color: c.text,
+              formatter: w => w.globals.seriesTotals.reduce((a, b) => a + b, 0).toLocaleString("fr-FR"),
             },
             value: {
               fontSize: "18px", fontWeight: 700,
-              fontFamily: "'DM Sans', sans-serif",
-              color: c.strong,
+              fontFamily: "'DM Sans', sans-serif", color: c.strong,
               formatter: v => Number(v).toLocaleString("fr-FR"),
             }
           }
@@ -170,8 +147,7 @@ function _renderDonut() {
       }
     },
     legend: {
-      position: "bottom", fontSize: "11px",
-      fontFamily: "'DM Sans', sans-serif",
+      position: "bottom", fontSize: "11px", fontFamily: "'DM Sans', sans-serif",
       labels: { colors: c.text },
       markers: { width: 8, height: 8, radius: 3 },
       itemMargin: { horizontal: 6, vertical: 2 },
@@ -188,97 +164,21 @@ function _renderDonut() {
   else { chartDonut = new ApexCharts(document.getElementById("chartDonutEl"), opts); chartDonut.render(); }
 }
 
-function _renderBar() {
-  const el = document.getElementById("chartBarEl");
-  if (!el) return;
-
-  const PODIUM_CATS = {
-    "Matin":  { cats: ["Matin","TLTDOMMatin","TLTMatin"],    color: "#6366F1", icon: "🌅" },
-    "Midi":   { cats: ["Midi","TLTDOMMidi","TLTMidi"],       color: "#22D3EE", icon: "☀️"  },
-    "Aprem":  { cats: ["APREM","TLTDOMAPREM","TLTAPREM"],    color: "#A78BFA", icon: "🌤️" },
-    "Soir":   { cats: ["Soir","TLTDOMSoir","TLTSoir"],       color: "#34D399", icon: "🌙" },
-    "Samedi": { cats: null,                                   color: "#F472B6", icon: "📅" },
-  };
-
-  const getRanking = (label, cats) => {
-    if (label === "Samedi") {
-      const persons = filtered.byCategory?.samedi?.persons || {};
-      return Object.entries(persons)
-        .map(([p, v]) => [p, v.days.size])
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3);
-    }
-    const scores = {};
-    for (const p in filtered.byPerson)
-      for (const day in filtered.byPerson[p].details) {
-        const count = filtered.byPerson[p].details[day].filter(e => cats.includes(e.categorie)).length;
-        if (count === 1) scores[p] = (scores[p] || 0) + 0.5;
-        if (count >= 2) scores[p] = (scores[p] || 0) + 1;
-      }
-    return Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  };
-
-  const medals = [
-    { icon: "🥇", bg: "rgba(255,196,0,0.13)",   color: "#A07800" },
-    { icon: "🥈", bg: "rgba(150,155,175,0.13)",  color: "#60637A" },
-    { icon: "🥉", bg: "rgba(175,100,45,0.11)",   color: "#7A4020" },
-  ];
-
-  const cards = Object.entries(PODIUM_CATS).map(([label, { cats, color, icon }]) => {
-    const top3 = getRanking(label, cats);
-    const max  = top3[0]?.[1] || 1;
-
-    const rows = top3.length
-      ? top3.map(([p, d], i) => {
-          const short = p.split(" ").map((w, j) => j === 0 ? w : w[0] + ".").join(" ");
-          const val   = Number.isInteger(d) ? d : d.toFixed(1);
-          const pct   = Math.round(d / max * 100);
-          const m     = medals[i];
-          return `
-            <div class="hcard-row">
-              <span class="hcard-medal" style="background:${m.bg};color:${m.color}">${m.icon}</span>
-              <div class="hcard-info">
-                <div class="hcard-name" title="${p}">${short}</div>
-                <div class="hcard-bar-track">
-                  <div class="hcard-bar-fill" style="width:${pct}%;background:${color}"></div>
-                </div>
-              </div>
-              <span class="hcard-days" style="color:${color}">${val}j</span>
-            </div>`;
-        }).join("")
-      : `<div class="hcard-empty">Aucune donnée</div>`;
-
-    return `
-      <div class="hcard">
-        <div class="hcard-header">
-          <span class="hcard-icon">${icon}</span>
-          <span class="hcard-label" style="color:${color}">${label}</span>
-        </div>
-        ${rows}
-      </div>`;
-  }).join("");
-
-  el.innerHTML = `<div class="hcard-grid">${cards}</div>`;
-}
-
-
 /* ============================================================
    HTML DU TABLEAU DE BORD (KPIs + table)
    Appelé depuis renderGlobal() dans ui.js
    ============================================================ */
 
-function getDashboardHTML(rows, colors) {
-  const kpi    = computeKPIs();
-  const fs     = document.getElementById("filterStart").value;
-  const fe     = document.getElementById("filterEnd").value;
-  const fmtD   = d => new Date(d).toLocaleDateString("fr-FR", { day:"2-digit", month:"short", year:"numeric" });
+export function getDashboardHTML(rows, colorsArg) {
+  const kpi     = computeKPIs();
+  const fs      = document.getElementById("filterStart").value;
+  const fe      = document.getElementById("filterEnd").value;
+  const fmtD    = d => new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
   const periode = fs && fe ? `${fmtD(fs)} → ${fmtD(fe)}` : "—";
-
   const tltColor = kpi.tauxTlt >= 50 ? "#22D3EE" : kpi.tauxTlt >= 30 ? "#A78BFA" : "#6366F1";
 
   return `
     <div class="kpi-grid">
-
       <div class="kpi-card">
         <div class="kpi-icon" style="background:rgba(99,102,241,0.1)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -292,7 +192,6 @@ function getDashboardHTML(rows, colors) {
           <span class="kpi-sub">actifs sur la période</span>
         </div>
       </div>
-
       <div class="kpi-card">
         <div class="kpi-icon" style="background:rgba(34,211,238,0.1)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -306,7 +205,6 @@ function getDashboardHTML(rows, colors) {
           <span class="kpi-sub">${periode}</span>
         </div>
       </div>
-
       <div class="kpi-card">
         <div class="kpi-icon" style="background:rgba(167,139,250,0.12)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -319,7 +217,6 @@ function getDashboardHTML(rows, colors) {
           <span class="kpi-sub">des jours travaillés</span>
         </div>
       </div>
-
     </div>
 
     <h3>Détail par catégorie</h3>
@@ -332,7 +229,7 @@ function getDashboardHTML(rows, colors) {
           const catKey = cat === "Samedi" ? "samedi" : cat;
           const dot    = cat === "Samedi"
             ? `<span class="color-dot" style="display:inline-block;background:#818CF8"></span>`
-            : `<span class="color-dot" style="display:inline-block;background:${colors[cat] || '#94A3B8'}"></span>`;
+            : `<span class="color-dot" style="display:inline-block;background:${colorsArg[cat] || '#94A3B8'}"></span>`;
           return `
           <tr class="tr-link" onclick="selCat('${catKey}')" title="Voir ${cat}">
             <td>${cat}</td><td>${dot}</td><td>${jours}</td>
@@ -341,10 +238,3 @@ function getDashboardHTML(rows, colors) {
       </tbody>
     </table>`;
 }
-
-
-/* ============================================================
-   STUBS (non utilisés mais gardés pour compatibilité)
-   ============================================================ */
-function updateKPIs()  {}
-function updatePodium(){}

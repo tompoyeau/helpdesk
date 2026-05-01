@@ -1,12 +1,13 @@
 /* ============================================================
-   PLANNING.JS — Gestion de l'affichage du planning hebdomadaire
-   Dépend de : planning, persons (data.js)
+   PLANNING.JS — Affichage du planning hebdomadaire
    ============================================================ */
 
-let currentWeekOffset = 0; // 0 = semaine courante, -1 = semaine précédente, etc.
+import { applyPersonFilter, planning } from './data.js';
+
+let currentWeekOffset = 0;
 
 /* ============================================================
-   GESTION DES FAVORIS (localStorage)
+   FAVORIS (localStorage)
    ============================================================ */
 
 const FAVORITES_KEY = 'planning_favorites';
@@ -15,34 +16,24 @@ function getFavorites() {
   try {
     const stored = localStorage.getItem(FAVORITES_KEY);
     return stored ? JSON.parse(stored) : [];
-  } catch (e) {
-    console.error('Erreur lecture favoris:', e);
-    return [];
-  }
+  } catch { return []; }
 }
 
 function saveFavorites(favorites) {
   try {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
   } catch (e) {
-    console.error('Erreur sauvegarde favoris:', e);
+    console.error('Erreur sauvegarde favoris :', e);
   }
 }
 
-function toggleFavorite(personName) {
+export function toggleFavorite(personName) {
   const favorites = getFavorites();
-  const index = favorites.indexOf(personName);
-  
-  if (index > -1) {
-    // Retirer des favoris
-    favorites.splice(index, 1);
-  } else {
-    // Ajouter aux favoris
-    favorites.push(personName);
-  }
-  
+  const index     = favorites.indexOf(personName);
+  if (index > -1) favorites.splice(index, 1);
+  else            favorites.push(personName);
   saveFavorites(favorites);
-  renderPlanning(); // Re-render pour mettre à jour l'affichage
+  renderPlanning();
 }
 
 function isFavorite(personName) {
@@ -55,129 +46,150 @@ function isFavorite(personName) {
 
 function getWeekDates(offset = 0) {
   const today = new Date();
-  const currentDay = today.getDay();
-  const diff = currentDay === 0 ? -6 : 1 - currentDay; // Lundi = jour 1
-  
+  const diff  = today.getDay() === 0 ? -6 : 1 - today.getDay();
   const monday = new Date(today);
-  monday.setDate(today.getDate() + diff + (offset * 7));
-  
-  const dates = [];
-  for (let i = 0; i < 5; i++) {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + i);
-    dates.push(date);
-  }
-  
-  return dates;
+  monday.setDate(today.getDate() + diff + offset * 7);
+
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
 }
 
 function formatDate(date) {
-  return date.toISOString().slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function formatDateLabel(date) {
-  const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-  const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
-  return {
-    day: days[date.getDay()],
-    date: date.getDate(),
-    month: months[date.getMonth()]
-  };
+  const days   = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const months = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+  return { day: days[date.getDay()], date: date.getDate(), month: months[date.getMonth()] };
 }
 
 /* ============================================================
-   EXTRACTION DES HORAIRES D'UNE JOURNÉE
+   CONTRASTE TEXTE (WCAG 2.1)
+   ============================================================ */
+
+function textColor(rgba) {
+  const [r, g, b] = rgba.match(/\d+/g).map(Number);
+  const lum = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const L = 0.2126 * lum(r) + 0.7152 * lum(g) + 0.0722 * lum(b);
+  return L > 0.179 ? '#1a1a1a' : '#ffffff';
+}
+
+/* ============================================================
+   HORAIRES & BADGE DE LIEU
    ============================================================ */
 
 function getWorkHours(personData) {
-  if (!personData || personData.length === 0) return null;
-  
-  // Filtre les absences
-  const workEntries = personData.filter(e => {
+  if (!personData?.length) return null;
+  const work = personData.filter(e => {
     const cat = e.categorie.toLowerCase();
     return cat !== 'cp' && cat !== 'indisponible' && cat !== 'récup';
   });
-  
-  if (workEntries.length === 0) return null;
-  
-  // Extrait les heures de début et fin
-  const times = workEntries.map(e => {
-    const [start, end] = e.horaire.split('-');
-    return { start, end };
-  });
-  
-  // Trouve l'heure de début la plus tôt et l'heure de fin la plus tard
+  if (!work.length) return null;
+
+  const times  = work.map(e => { const [s, en] = e.horaire.split('-'); return { start: s, end: en }; });
   const starts = times.map(t => t.start).sort();
-  const ends = times.map(t => t.end).sort();
-  
-  return {
-    debut: starts[0],
-    fin: ends[ends.length - 1],
-    couleur: workEntries[0].couleur
-  };
+  const ends   = times.map(t => t.end).sort();
+  return { debut: starts[0], fin: ends[ends.length - 1], couleur: work[0].couleur };
 }
-
-/* ============================================================
-   CALCUL DU TOTAL D'HEURES
-   ============================================================ */
-
-function calculateHours(debut, fin) {
-  const [hD, mD] = debut.split(':').map(Number);
-  const [hF, mF] = fin.split(':').map(Number);
-  const totalMinutes = (hF * 60 + mF) - (hD * 60 + mD);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}h${minutes > 0 ? minutes.toString().padStart(2, '0') : ''}`;
-}
-
-/* ============================================================
-   GÉNÉRATION DU BADGE DE LIEU
-   ============================================================ */
 
 function getLocationBadge(personData) {
-  if (!personData || personData.length === 0) return null;
-  
-  const workEntries = personData.filter(e => {
+  if (!personData?.length) return null;
+  const work = personData.filter(e => {
     const cat = e.categorie.toLowerCase();
     return cat !== 'cp' && cat !== 'indisponible' && cat !== 'récup';
   });
-  
-  if (workEntries.length === 0) return null;
-  
-  const cat = workEntries[0].categorie;
-  
-  if (cat.includes('TLTDOM')) {
-    return { icon: '🏠', label: 'Domicile', color: 'rgba(188, 145, 87, 0.15)' };
-  } else if (cat.includes('TLT')) {
-    return { icon: '💼', label: 'TLT Agence', color: 'rgba(167, 139, 250, 0.15)' };
-  } else if (cat.includes('Apside')) {
-    return { icon: '🏢', label: 'Agence', color: 'rgba(52, 211, 153, 0.15)' };
-  } else {
-    return { icon: '👤', label: 'Client', color: 'rgba(99, 102, 241, 0.15)' };
-  }
+  if (!work.length) return null;
+
+  const cat = work[0].categorie;
+  if (cat.includes('TLT Agence')) return { icon: '💼', label: 'TLT Agence',  color: 'rgba(167,139,250,0.15)'  };
+  if (cat.includes('TLT'))        return { icon: '🏠', label: 'Domicile',    color: 'rgba(188,145,87,0.15)'   };
+  if (cat.includes('Agence'))     return { icon: '🏢', label: 'Agence',      color: 'rgba(52,211,153,0.15)'   };
+  return                                  { icon: '👤', label: 'Client',      color: 'rgba(99,102,241,0.15)'   };
+}
+
+function getSlotAbbrev(personData) {
+  if (!personData?.length) return '';
+  const work = personData.filter(e => {
+    const cat = e.categorie.toLowerCase();
+    return cat !== 'cp' && cat !== 'indisponible' && cat !== 'récup';
+  });
+  if (!work.length) return '';
+
+  const cats = new Set(work.map(e => e.categorie));
+  const slots = [];
+  if (['Matin','TLT Matin','TLT Agence Matin','Agence Matin'].some(c => cats.has(c)))              slots.push('Mat');
+  if (['Midi','TLT Midi','TLT Agence Midi','Agence Midi'].some(c => cats.has(c)))                  slots.push('Midi');
+  if (['Aprem','TLT APREM','TLT Agence APREM','Agence APREM','ApremRenf'].some(c => cats.has(c)))  slots.push('Apr');
+  if (['Soir','TLT Soir','TLT Agence Soir','Agence Soir'].some(c => cats.has(c)))                 slots.push('Soir');
+  return slots.length ? slots.join('+') : work[0].categorie.slice(0, 4);
 }
 
 /* ============================================================
-   RENDU DU PLANNING
+   MODAL DÉTAIL JOURNÉE
    ============================================================ */
 
-function renderPlanning() {
+export function openDayModal(person, dateStr) {
+  const dayData = planning[person]?.[dateStr];
+  if (!dayData?.length) return;
+
+  const date      = new Date(dateStr + 'T12:00:00');
+  const dateLabel = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const initials  = person.split(' ').map(n => n[0]).join('');
+
+  const entriesHTML = dayData.map(e => `
+    <div class="modal-entry">
+      <div class="modal-entry-bar" style="background:${e.couleur}"></div>
+      <div class="modal-entry-info">
+        <span class="modal-entry-cat">${e.categorie}</span>
+        <span class="modal-entry-hours">${e.horaire}</span>
+      </div>
+    </div>`).join('');
+
+  const modal = document.getElementById('planningModal');
+  modal.innerHTML = `
+    <div class="modal-backdrop" onclick="closeDayModal()"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="planning-avatar" style="background:linear-gradient(135deg,#6366F1 0%,#A78BFA 100%)">${initials}</div>
+        <div>
+          <div class="modal-person">${person}</div>
+          <div class="modal-date">${dateLabel}</div>
+        </div>
+        <button class="btn-icon btn-icon-sm" onclick="closeDayModal()" style="margin-left:auto">
+          <i data-lucide="x" style="width:14px;height:14px;"></i>
+        </button>
+      </div>
+      <div class="modal-entries">${entriesHTML}</div>
+    </div>`;
+
+  modal.classList.add('open');
+  lucide.createIcons();
+}
+
+export function closeDayModal() {
+  document.getElementById('planningModal').classList.remove('open');
+}
+
+export function renderPlanning() {
   const container = document.getElementById('planningContent');
   if (!container) return;
-  
+
   const weekDates = getWeekDates(currentWeekOffset);
   const weekStart = formatDateLabel(weekDates[0]);
-  const weekEnd = formatDateLabel(weekDates[4]);
-  
-  // Récupère la liste des personnes actives si le filtre est activé
-  const activePerson = applyPersonFilter();
-  
-  // Séparer favoris et non-favoris
-  const favorites = getFavorites();
+  const weekEnd   = formatDateLabel(weekDates[4]);
+
+  const activePerson   = applyPersonFilter();
+  const favorites      = getFavorites();
   const favoritePeople = activePerson.filter(p => favorites.includes(p));
-  const otherPeople = activePerson.filter(p => !favorites.includes(p));
-  
-  // Header avec navigation
+  const otherPeople    = activePerson.filter(p => !favorites.includes(p));
+
   const header = `
     <div class="planning-header">
       <div class="planning-nav">
@@ -196,112 +208,88 @@ function renderPlanning() {
           Aujourd'hui
         </button>
       </div>
-    </div>
-  `;
-  
-  // Header des jours
+    </div>`;
+
   const daysHeader = `
     <div class="planning-grid-header">
       <div class="planning-name-col">Collaborateur</div>
       ${weekDates.map(date => {
-        const label = formatDateLabel(date);
+        const label   = formatDateLabel(date);
         const isToday = formatDate(date) === formatDate(new Date());
         return `
           <div class="planning-day-col ${isToday ? 'planning-day-today' : ''}">
             <div class="planning-day-label">${label.day}</div>
             <div class="planning-day-date">${label.date} ${label.month}</div>
-          </div>
-        `;
+          </div>`;
       }).join('')}
-    </div>
-  `;
-  
-  // Lignes des collaborateurs
+    </div>`;
+
   const createPersonRow = (person, isFav = false) => {
     const initials = person.split(' ').map(n => n[0]).join('');
-    
     const daysCells = weekDates.map(date => {
-      const dateStr = formatDate(date);
-      const dayData = planning[person]?.[dateStr];
-      const hours = getWorkHours(dayData);
+      const dateStr  = formatDate(date);
+      const label    = formatDateLabel(date);
+      const dayData  = planning[person]?.[dateStr];
+      const hours    = getWorkHours(dayData);
       const location = getLocationBadge(dayData);
-      
+
       if (!hours) {
-            // Jour de repos ou absence
-            const absence =
-              dayData &&
-              dayData.find(
-                (e) =>
-                  e.categorie === "CP" ||
-                  e.categorie === "Indisponible" ||
-                  e.categorie === "Récup",
-              );
-
-            return `
-  <div class="planning-cell planning-cell-empty">
-    ${
-      absence
-        ? `<span class="planning-absence">${absence.categorie}</span>`
-        : '<span class="planning-rest">—</span>'
-    }
-  </div>
-`;
-      }
-      
-      // Couleur pour les heures de travail, avec transparence pour le badge de lieu
-          const color = hours.couleur.replace(", 1)", ", 0.5)");
-
+        const absence = dayData?.find(e => e.categorie === "CP" || e.categorie === "Indisponible" || e.categorie === "Récup");
+        if (absence) {
+          const bg = absence.couleur.replace(', 1)', ', 0.7)');
           return `
-        <div class="planning-cell planning-cell-work" style="border-left: 3px solid ${hours.couleur}">
-          ${
-            location
-              ? `
-            <div class="planning-location" style="background:${color}">
-            <span>${location.icon}</span>
-            <span>${hours.debut} - ${hours.fin}</span>
-              <span>${location.label}</span>
-            </div>
-          `
-              : ""
-          }
-        </div>
-      `;
-        })
-        .join("");
-    
+            <div class="planning-cell planning-cell-absence" data-day="${label.day}">
+              <div class="planning-absence-fill" style="background:${bg};color:${textColor(bg)}">
+                <span class="planning-absence" style="font-weight:600">${absence.categorie}</span>
+              </div>
+            </div>`;
+        }
+        return `
+          <div class="planning-cell planning-cell-empty" data-day="${label.day}">
+            <span class="planning-rest">—</span>
+          </div>`;
+      }
+
+      const bgColor  = hours.couleur.replace(', 1)', ', 0.7)');
+      const slot     = getSlotAbbrev(dayData);
+      const safeName = person.replace(/'/g, "\\'");
+      return `
+        <div class="planning-cell planning-cell-work" data-day="${label.day}" style="cursor:pointer" onclick="openDayModal('${safeName}','${dateStr}')">
+          ${location ? `
+            <div class="planning-location" style="background:${bgColor};color:${textColor(bgColor)}">
+              <span class="loc-icon">${location.icon}</span>
+              <span class="loc-slot">${slot}</span>
+              <span class="loc-time">${hours.debut} – ${hours.fin}</span>
+              <span class="loc-label">${location.label}</span>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+
     return `
       <div class="planning-row ${isFav ? 'planning-row-favorite' : ''}">
         <div class="planning-name-cell">
-          <div class="planning-avatar" style="background: linear-gradient(135deg, #6366F1 0%, #A78BFA 100%)">
-            ${initials}
-          </div>
+          <div class="planning-avatar" style="background:linear-gradient(135deg,#6366F1 0%,#A78BFA 100%)">${initials}</div>
           <div class="planning-person-info">
             <div class="planning-person-name">${person}</div>
           </div>
-          <button class="btn-favorite ${isFav ? 'active' : ''}" 
-                  onclick="toggleFavorite('${person.replace(/'/g, "\\'")}')" 
+          <button class="btn-favorite ${isFav ? 'active' : ''}"
+                  onclick="toggleFavorite('${person.replace(/'/g, "\\'")}')"
                   title="${isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}">
-            <i data-lucide="${isFav ? 'star' : 'star'}" style="width:14px;height:14px;${isFav ? 'fill:currentColor;' : ''}"></i>
+            <i data-lucide="star" style="width:14px;height:14px;${isFav ? 'fill:currentColor;' : ''}"></i>
           </button>
         </div>
-        ${daysCells}
-      </div>
-    `;
+        <div class="planning-days-mobile">${daysCells}</div>
+      </div>`;
   };
 
-  // Génération des sections
-  let favoritesSection = '';
-  if (favoritePeople.length > 0) {
-    favoritesSection = `
-      <div class="planning-section">
-        <div class="planning-section-header">
-          <i data-lucide="star" style="width:14px;height:14px;fill:currentColor;"></i>
-          <span>Favoris (${favoritePeople.length})</span>
-        </div>
-        ${favoritePeople.map(p => createPersonRow(p, true)).join('')}
+  const favoritesSection = favoritePeople.length > 0 ? `
+    <div class="planning-section">
+      <div class="planning-section-header">
+        <i data-lucide="star" style="width:14px;height:14px;fill:currentColor;"></i>
+        <span>Favoris (${favoritePeople.length})</span>
       </div>
-    `;
-  }
+      ${favoritePeople.map(p => createPersonRow(p, true)).join('')}
+    </div>` : '';
 
   const othersSection = otherPeople.length > 0 ? `
     <div class="planning-section ${favoritePeople.length > 0 ? 'planning-section-others' : ''}">
@@ -309,37 +297,15 @@ function renderPlanning() {
         <div class="planning-section-header">
           <i data-lucide="users" style="width:14px;height:14px;"></i>
           <span>Autres collaborateurs (${otherPeople.length})</span>
-        </div>
-      ` : ''}
+        </div>` : ''}
       ${otherPeople.map(p => createPersonRow(p, false)).join('')}
-    </div>
-  ` : '';
-  
-  container.innerHTML = header + daysHeader + `<div class="planning-grid-body">${favoritesSection}${othersSection}</div>`;
-  
-  // Recrée les icônes Lucide
+    </div>` : '';
+
+  container.innerHTML = `<div class="planning-card">${header}${daysHeader}<div class="planning-grid-body">${favoritesSection}${othersSection}</div></div>`;
+
   lucide.createIcons();
-  
-  // Événements de navigation
-  document.getElementById('prevWeek').onclick = () => {
-    currentWeekOffset--;
-    renderPlanning();
-  };
-  
-  document.getElementById('nextWeek').onclick = () => {
-    currentWeekOffset++;
-    renderPlanning();
-  };
-  
-  document.getElementById('todayWeek').onclick = () => {
-    currentWeekOffset = 0;
-    renderPlanning();
-  };
+
+  document.getElementById('prevWeek').onclick  = () => { currentWeekOffset--; renderPlanning(); };
+  document.getElementById('nextWeek').onclick  = () => { currentWeekOffset++; renderPlanning(); };
+  document.getElementById('todayWeek').onclick = () => { currentWeekOffset = 0; renderPlanning(); };
 }
-
-/* ============================================================
-   EXPORT
-   ============================================================ */
-
-window.renderPlanning = renderPlanning;
-window.toggleFavorite = toggleFavorite;
