@@ -138,8 +138,8 @@ export const useDataStore = defineStore('data', () => {
   const filterEnd    = ref('')
   const filterActive = ref(true)
 
-  // Données filtrées
-  const filtered = ref(null)
+  // Données filtrées — shallowRef : évite le proxy récursif de byPerson (milliers d'objets)
+  const filtered = shallowRef(null)
 
   /* ── Personnes actives (computed — mis en cache automatiquement) ── */
   const activePersonsList = computed(() => {
