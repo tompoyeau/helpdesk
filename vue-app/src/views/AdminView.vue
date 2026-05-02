@@ -19,7 +19,7 @@
           <div>
             <h2 style="margin:0 0 2px;font-size:0.9375rem">Administration</h2>
             <p style="margin:0;color:var(--text-muted);font-size:0.75rem">
-              Gérez les droits d'accès des utilisateurs
+              Gérez les droits d'accès des collaborateurs
             </p>
           </div>
         </div>
@@ -30,7 +30,7 @@
           <span>
             Le premier administrateur doit être activé manuellement dans la
             <a href="https://console.firebase.google.com" target="_blank">console Firebase</a>
-            : <code>Firestore → users → {uid} → isAdmin: true</code>
+            : <code>Firestore → personnes → {uid} → isAdmin: true</code>
           </span>
         </div>
 
@@ -41,21 +41,19 @@
 
         <template v-else>
           <!-- Compteur -->
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span style="color:var(--text-muted)">
-              {{ userStore.users.length }} utilisateur{{ userStore.users.length > 1 ? 's' : '' }}
-              · {{ adminCount }} admin{{ adminCount > 1 ? 's' : '' }}
-            </span>
+          <div style="margin-bottom:12px;color:var(--text-muted)">
+            {{ userStore.users.length }} collaborateur{{ userStore.users.length > 1 ? 's' : '' }}
+            · {{ adminCount }} admin{{ adminCount > 1 ? 's' : '' }}
           </div>
 
           <!-- Tableau -->
           <table class="w-full">
             <thead>
               <tr>
-                <th>Utilisateur</th>
-                <th>Rôle</th>
-                <th class="desktop-only">Inscription</th>
-                <th class="desktop-only">Dernière connexion</th>
+                <th>Collaborateur</th>
+                <th class="desktop-only">Email</th>
+                <th class="desktop-only">Rôle métier</th>
+                <th>Admin</th>
               </tr>
             </thead>
             <tbody>
@@ -64,42 +62,47 @@
                   <div style="display:flex;align-items:center;gap:8px">
                     <div
                       class="person-avatar"
-                      style="width:26px;height:26px;font-size:0.5625rem"
+                      style="width:28px;height:28px;font-size:0.625rem;flex-shrink:0"
                       :style="u.isAdmin ? 'background:linear-gradient(135deg,#6366F1,#A78BFA)' : ''"
                     >
-                      {{ initials(u.email) }}
+                      {{ initials(u) }}
                     </div>
                     <div>
-                      <div style="font-weight:500">{{ u.email }}</div>
-                      <div v-if="u.uid === auth.user?.uid" style="font-size:0.6875rem;color:var(--accent)">
-                        Vous
-                      </div>
+                      <div style="font-weight:600">{{ u.nom }} {{ u.prenom }}</div>
+                      <div style="font-size:0.6875rem;color:var(--text-muted)">{{ u.niveau }}</div>
                     </div>
                   </div>
                 </td>
+                <td class="desktop-only" style="color:var(--text-muted)">{{ u.email || '—' }}</td>
+                <td class="desktop-only" style="color:var(--text-muted)">{{ u.role || '—' }}</td>
                 <td>
-                  <label class="toggle-label flex items-center gap-2" :class="u.uid === auth.user?.uid ? '' : 'cursor-pointer'">
+                  <label
+                    class="toggle-label flex items-center gap-2"
+                    :class="isSelf(u) ? '' : 'cursor-pointer'"
+                    :title="isSelf(u) ? 'Vous ne pouvez pas modifier votre propre rôle' : ''"
+                  >
                     <input
                       type="checkbox"
                       :checked="u.isAdmin"
-                      :disabled="u.uid === auth.user?.uid"
+                      :disabled="isSelf(u)"
                       class="toggle-input"
                       @change="toggleAdmin(u)"
                     >
                     <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                    <span class="toggle-text" :style="u.isAdmin ? 'color:var(--accent);font-weight:600' : ''">
-                      {{ u.isAdmin ? 'Admin' : 'Utilisateur' }}
+                    <span
+                      class="toggle-text"
+                      :style="u.isAdmin ? 'color:var(--accent);font-weight:600' : ''"
+                    >
+                      {{ u.isAdmin ? 'Admin' : 'User' }}
                     </span>
                   </label>
                 </td>
-                <td class="desktop-only" style="color:var(--text-muted)">{{ fmtDate(u.createdAt) }}</td>
-                <td class="desktop-only" style="color:var(--text-muted)">{{ fmtDate(u.lastLogin) }}</td>
               </tr>
             </tbody>
           </table>
 
           <div v-if="!userStore.users.length" style="text-align:center;padding:32px;color:var(--text-muted)">
-            Aucun utilisateur trouvé.
+            Aucun collaborateur trouvé.
           </div>
         </template>
       </div>
@@ -167,15 +170,12 @@ onMounted(() => {
 
 const adminCount = computed(() => userStore.users.filter(u => u.isAdmin).length)
 
-function initials(email) {
-  return email.split('@')[0].slice(0, 2).toUpperCase()
+function initials(u) {
+  return `${u.nom?.[0] ?? ''}${u.prenom?.[0] ?? ''}`.toUpperCase()
 }
 
-function fmtDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
+function isSelf(u) {
+  return u.uid === auth.user?.uid
 }
 
 async function toggleAdmin(u) {

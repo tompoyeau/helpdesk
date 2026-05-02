@@ -64,7 +64,7 @@ onMounted(async () => {
 watch(() => auth.user, async (newUser, oldUser) => {
   if (newUser && !oldUser) {
     // Connexion : charge le rôle puis les données
-    await userStore.loadUser(newUser.uid, newUser.email)
+    await userStore.loadUser(newUser.uid)
     await data.init()
   } else if (!newUser && oldUser) {
     // Déconnexion : réinitialise le rôle
