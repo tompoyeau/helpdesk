@@ -27,6 +27,10 @@
         <LayoutDashboard :size="13" />
         <span class="hide-xs">Tableau de bord</span>
       </RouterLink>
+      <RouterLink v-if="userStore.isAdmin" to="/admin" class="header-nav-btn" :class="{ active: route.path === '/admin' }">
+        <Shield :size="13" />
+        <span class="hide-xs">Admin</span>
+      </RouterLink>
     </nav>
 
     <div class="flex items-center gap-2">
@@ -53,10 +57,12 @@
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
-import { Users, CalendarDays, LayoutDashboard, Calendar, Moon, Sun, Tag, LogOut } from 'lucide-vue-next'
+import { useUserStore } from '@/stores/userStore'
+import { Users, CalendarDays, LayoutDashboard, Calendar, Moon, Sun, Tag, LogOut, Shield } from 'lucide-vue-next'
 import DateRangePicker from '@/components/layout/DateRangePicker.vue'
 
-const route = useRoute()
-const ui    = useUiStore()
-const auth  = useAuthStore()
+const route     = useRoute()
+const ui        = useUiStore()
+const auth      = useAuthStore()
+const userStore = useUserStore()
 </script>

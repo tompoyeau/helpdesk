@@ -37,24 +37,38 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useDataStore } from '@/stores/dataStore'
+import { useUserStore } from '@/stores/userStore'
 import LoginOverlay from '@/components/LoginOverlay.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SidebarLeft from '@/components/layout/SidebarLeft.vue'
 import SidebarRight from '@/components/layout/SidebarRight.vue'
 
-const auth = useAuthStore()
-const ui   = useUiStore()
-const data = useDataStore()
+const auth     = useAuthStore()
+const ui       = useUiStore()
+const data     = useDataStore()
+const userStore = useUserStore()
 
 onMounted(async () => {
   ui.initDark()
   // Attend que Firebase confirme l'état de session
-  const user = await auth.init()
-  // Charge les données uniquement si connecté
-  if (user) await data.init()
+  await auth.init()
+  // Le watch ci-dessous prend le relais pour charger les données
+})
+
+// Réagit à chaque changement d'état d'authentification
+// (connexion initiale, login via LoginOverlay, déconnexion)
+watch(() => auth.user, async (newUser, oldUser) => {
+  if (newUser && !oldUser) {
+    // Connexion : charge le rôle puis les données
+    await userStore.loadUser(newUser.uid, newUser.email)
+    await data.init()
+  } else if (!newUser && oldUser) {
+    // Déconnexion : réinitialise le rôle
+    userStore.reset()
+  }
 })
 </script>
