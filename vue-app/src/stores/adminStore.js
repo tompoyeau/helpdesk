@@ -1,0 +1,132 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { db } from '@/firebase/config'
+import {
+  doc, getDoc, setDoc, updateDoc, deleteDoc,
+} from 'firebase/firestore'
+import { TIME_SLOTS } from '@/stores/dataStore'
+
+export { TIME_SLOTS }
+
+export const useAdminStore = defineStore('admin', () => {
+  const saving = ref(false)
+  const error  = ref(null)
+
+  /* ── Génération d'IDs ── */
+  function generatePersonneId() {
+    return `${Date.now()}-${Math.floor(Math.random() * 900000 + 100000)}`
+  }
+
+  // "DDMMYYYY" ← format des documents plannings
+  function dateToId(date) {
+    const d = String(date.getDate()).padStart(2, '0')
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    return `${d}${m}${date.getFullYear()}`
+  }
+
+  /* ── Conversion dates ── */
+  // "2025-04-18" → "18 04 2025" (format Firestore)
+  function inputToFirestore(iso) {
+    if (!iso) return ''
+    const [y, m, d] = iso.split('-')
+    return `${d} ${m} ${y}`
+  }
+
+  // "18 04 2025" → "2025-04-18" (format input date)
+  function firestoreToInput(str) {
+    if (!str) return ''
+    const p = str.trim().split(' ')
+    if (p.length < 3) return ''
+    return `${p[2]}-${p[1]}-${p[0]}`
+  }
+
+  /* ── Collaborateurs CRUD ── */
+  async function createPersonne(data) {
+    const id = generatePersonneId()
+    await setDoc(doc(db, 'personnes', id), { ...data, id })
+    return id
+  }
+
+  async function updatePersonne(id, data) {
+    await updateDoc(doc(db, 'personnes', id), data)
+  }
+
+  async function deletePersonne(id) {
+    await deleteDoc(doc(db, 'personnes', id))
+  }
+
+  /* ── Planning ── */
+  async function loadDayPlanning(date) {
+    const id   = dateToId(date)
+    const snap = await getDoc(doc(db, 'plannings', id))
+    return snap.exists()
+      ? { id, exists: true,  ressources: snap.data().ressources || [] }
+      : { id, exists: false, ressources: [] }
+  }
+
+  async function saveDayPlanning(date, ressources) {
+    saving.value = true
+    error.value  = null
+    try {
+      await setDoc(doc(db, 'plannings', dateToId(date)), { ressources })
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /* ── Activités : parse/build ── */
+  // activites[] → [{code, startSlot, endSlot}]
+  function parseBlocks(activites) {
+    if (!Array.isArray(activites)) return []
+    const blocks = []
+    let cur = null, si = null
+    for (let i = 0; i <= activites.length; i++) {
+      const c = i < activites.length ? activites[i] : ''
+      if (c && c !== '') {
+        if (cur === null)     { cur = c; si = i }
+        else if (cur !== c)  { blocks.push({ code: cur, startSlot: si, endSlot: i }); cur = c; si = i }
+      } else if (cur !== null) {
+        blocks.push({ code: cur, startSlot: si, endSlot: i })
+        cur = null; si = null
+      }
+    }
+    return blocks
+  }
+
+  // [{code, startSlot, endSlot}] → activites[]
+  function buildActivites(blocks) {
+    const arr = new Array(45).fill('')
+    blocks.forEach(({ code, startSlot, endSlot }) => {
+      for (let i = startSlot; i < Math.min(endSlot, 45); i++) arr[i] = String(code)
+    })
+    return arr
+  }
+
+  /* ── Personnes actives à une date donnée ── */
+  function isActiveOn(person, date) {
+    const parse = str => {
+      if (!str) return null
+      const p = str.trim().split(' ')
+      return p.length >= 3 ? new Date(+p[2], +p[1] - 1, +p[0]) : null
+    }
+    const d0 = new Date(date); d0.setHours(0, 0, 0, 0)
+    const arrivee = parse(person.arrivee)
+    const depart  = parse(person.depart)
+    if (!arrivee || d0 < arrivee) return false
+    if (depart && d0 > depart)   return false
+    return true
+  }
+
+  return {
+    saving, error,
+    TIME_SLOTS,
+    generatePersonneId, dateToId,
+    inputToFirestore, firestoreToInput,
+    createPersonne, updatePersonne, deletePersonne,
+    loadDayPlanning, saveDayPlanning,
+    parseBlocks, buildActivites, isActiveOn,
+  }
+})
