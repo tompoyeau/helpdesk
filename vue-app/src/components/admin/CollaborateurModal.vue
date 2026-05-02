@@ -4,7 +4,7 @@
 
       <div class="modal-header">
         <h3>{{ isEdit ? 'Modifier le collaborateur' : 'Nouveau collaborateur' }}</h3>
-        <button class="btn-icon btn-icon-sm" @click="$emit('close')"><X :size="14" /></button>
+        <button class="btn-close" @click="$emit('close')"><X :size="14" /></button>
       </div>
 
       <form @submit.prevent="submit" class="collab-form">
@@ -37,7 +37,12 @@
           </div>
           <div class="form-group">
             <label>Rôle métier</label>
-            <input v-model="form.role" placeholder="Technico-fonctionnel" class="form-input" />
+            <select v-model="form.role" class="form-input">
+              <option value="">—</option>
+              <option>Technique</option>
+              <option>Fonctionnel</option>
+              <option>Technico-fonctionnel</option>
+            </select>
           </div>
         </div>
 
@@ -64,7 +69,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn-ghost" @click="$emit('close')">Annuler</button>
-          <button type="submit" class="btn-primary" :disabled="saving">
+          <button type="submit" class="btn-save" :disabled="saving || !isDirty">
             <span v-if="saving">Enregistrement…</span>
             <span v-else>{{ isEdit ? 'Enregistrer' : 'Créer' }}</span>
           </button>
@@ -124,6 +129,29 @@
   background: transparent; color: var(--text);
 }
 .btn-ghost:hover { background: var(--bg-hover); }
+
+/* Bouton Enregistrer/Créer — visible en light et dark */
+.btn-save {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 18px; border-radius: 8px; font-size: 0.8125rem; font-weight: 600;
+  background: var(--accent); color: #fff;
+  border: none; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-save:hover   { background: var(--accent-hover); }
+.btn-save:active  { transform: scale(0.97); }
+.btn-save:disabled { opacity: 0.5; cursor: default; }
+
+/* Bouton croix fermeture */
+.btn-close {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.btn-close:hover { background: var(--bg-hover); color: var(--text); }
+
 @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
 </style>
 
@@ -155,6 +183,33 @@ const form = ref({
   arriveeInput: admin.firestoreToInput(props.person?.arrivee ?? ''),
   departInput:  admin.firestoreToInput(props.person?.depart  ?? ''),
   isAdmin:     props.person?.isAdmin     ?? false,
+})
+
+// Valeurs initiales pour détecter les modifications (mode édition uniquement)
+const initial = {
+  nom:         props.person?.nom         ?? '',
+  prenom:      props.person?.prenom      ?? '',
+  email:       props.person?.email       ?? '',
+  niveau:      props.person?.niveau      ?? '',
+  role:        props.person?.role        ?? '',
+  arriveeInput: admin.firestoreToInput(props.person?.arrivee ?? ''),
+  departInput:  admin.firestoreToInput(props.person?.depart  ?? ''),
+  isAdmin:     props.person?.isAdmin     ?? false,
+}
+
+const isDirty = computed(() => {
+  if (!isEdit.value) return true // création : toujours actif
+  const f = form.value
+  return (
+    f.nom         !== initial.nom         ||
+    f.prenom      !== initial.prenom      ||
+    f.email       !== initial.email       ||
+    f.niveau      !== initial.niveau      ||
+    f.role        !== initial.role        ||
+    f.arriveeInput !== initial.arriveeInput ||
+    f.departInput  !== initial.departInput  ||
+    f.isAdmin     !== initial.isAdmin
+  )
 })
 
 async function submit() {

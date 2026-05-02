@@ -1,13 +1,20 @@
 <template>
   <div class="modal-backdrop" @click.self="$emit('close')">
-    <div class="modal-box">
+
+    <!-- ── Étape 1 : édition ── -->
+    <div v-if="step === 1" class="modal-box">
 
       <div class="modal-header">
         <div>
           <h3>{{ ressource.nom }} {{ ressource.prenom }}</h3>
           <p class="modal-sub">{{ dateLabel }}</p>
         </div>
-        <button class="btn-icon btn-icon-sm" @click="$emit('close')"><X :size="14" /></button>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span v-if="totalHeures > 0" class="heures-badge">
+            <Clock :size="11" /> {{ fmtHeures(totalHeures) }}
+          </span>
+          <button class="btn-close" @click="$emit('close')"><X :size="14" /></button>
+        </div>
       </div>
 
       <!-- Timeline visuelle -->
@@ -34,7 +41,7 @@
           <span class="block-dot" :style="{ background: activityColor(b.code) }"></span>
           <span class="block-name">{{ activityName(b.code) }}</span>
           <span class="block-time">{{ TIME_SLOTS[b.startSlot] }} → {{ TIME_SLOTS[b.endSlot] || TIME_SLOTS[44] }}</span>
-          <button class="btn-icon btn-icon-sm btn-danger-ghost" @click="removeBlock(i)" title="Supprimer">
+          <button class="btn-remove" @click="removeBlock(i)" title="Supprimer">
             <Trash2 :size="12" />
           </button>
         </div>
@@ -44,34 +51,117 @@
       <div class="add-section">
         <div class="section-title">Ajouter une activité</div>
         <div class="add-form">
-          <select v-model="newBlock.code" class="form-input">
+          <select v-model="newBlock.code" class="form-input" @change="onCodeChange">
             <option value="">— Activité —</option>
             <option v-for="[code, act] in activityOptions" :key="code" :value="code">
               {{ act.categorie }}
             </option>
           </select>
-          <select v-model="newBlock.startSlot" class="form-input form-input-sm">
-            <option v-for="(t, i) in TIME_SLOTS.slice(0, 44)" :key="i" :value="i">{{ t }}</option>
-          </select>
-          <span style="color:var(--text-muted);font-size:0.75rem">→</span>
-          <select v-model="newBlock.endSlot" class="form-input form-input-sm">
-            <option
-              v-for="(t, i) in TIME_SLOTS.slice(1)"
-              :key="i + 1"
-              :value="i + 1"
-              :disabled="i + 1 <= newBlock.startSlot"
-            >{{ t }}</option>
-          </select>
-          <button class="btn-primary btn-sm" :disabled="!newBlock.code" @click="addBlock">
-            <Plus :size="12" /> Ajouter
-          </button>
+
+          <template v-if="newBlock.code">
+            <!-- Pré-remplissage rapide si preset disponible -->
+            <button
+              v-if="PRESETS[newBlock.code]"
+              class="btn-preset"
+              @click="applyPreset"
+            >
+              <Zap :size="11" /> Pré-remplir
+            </button>
+
+            <!-- Saisie manuelle (toujours visible) -->
+            <select v-model="newBlock.startSlot" class="form-input form-input-sm">
+              <option v-for="(t, i) in TIME_SLOTS.slice(0, 44)" :key="i" :value="i">{{ t }}</option>
+            </select>
+            <span style="color:var(--text-muted);font-size:0.75rem">→</span>
+            <select v-model="newBlock.endSlot" class="form-input form-input-sm">
+              <option
+                v-for="(t, i) in TIME_SLOTS.slice(1)"
+                :key="i + 1"
+                :value="i + 1"
+                :disabled="i + 1 <= newBlock.startSlot"
+              >{{ t }}</option>
+            </select>
+            <button class="btn-add" @click="addBlock">
+              <Plus :size="12" /> Ajouter
+            </button>
+          </template>
         </div>
         <div v-if="overlapError" class="form-error">{{ overlapError }}</div>
       </div>
 
       <div class="modal-footer">
         <button class="btn-ghost" @click="$emit('close')">Annuler</button>
-        <button class="btn-primary" @click="save">Valider</button>
+        <button class="btn-save" :disabled="!blocks.length" @click="goToStep2">Valider</button>
+      </div>
+    </div>
+
+    <!-- ── Étape 2 : appliquer à d'autres ── -->
+    <div v-else class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h3>Appliquer ce planning</h3>
+          <p class="modal-sub">{{ ressource.nom }} {{ ressource.prenom }} · {{ dateLabel }}</p>
+        </div>
+        <button class="btn-close" @click="$emit('close')"><X :size="14" /></button>
+      </div>
+
+      <!-- Timeline récap -->
+      <div class="timeline-wrap">
+        <div class="timeline-labels">
+          <span v-for="h in timeLabels" :key="h">{{ h }}</span>
+        </div>
+        <div class="timeline-bar">
+          <div
+            v-for="(code, i) in previewSlots"
+            :key="i"
+            class="timeline-slot"
+            :style="{ background: slotColor(code) }"
+          />
+        </div>
+      </div>
+
+      <!-- Appliquer à d'autres collabs -->
+      <div class="apply-section" v-if="otherCollabs.length">
+        <div class="section-title"><Users :size="11" /> Appliquer à d'autres collaborateurs</div>
+        <div class="collab-list">
+          <label
+            v-for="c in otherCollabs"
+            :key="c.idPersonne"
+            class="collab-check"
+          >
+            <input type="checkbox" :value="c.idPersonne" v-model="selectedCollabs" />
+            <div class="person-avatar" style="width:22px;height:22px;font-size:0.5rem;flex-shrink:0">
+              {{ `${c.nom?.[0] ?? ''}${c.prenom?.[0] ?? ''}`.toUpperCase() }}
+            </div>
+            <span>{{ c.nom }} {{ c.prenom }}</span>
+          </label>
+        </div>
+        <div class="quick-actions">
+          <button class="btn-ghost-xs" @click="selectedCollabs = otherCollabs.map(c => c.idPersonne)">Tous</button>
+          <button class="btn-ghost-xs" @click="selectedCollabs = []">Aucun</button>
+        </div>
+        <!-- Option semaine pour les collabs sélectionnés -->
+        <label v-if="selectedCollabs.length" class="week-check" style="margin-top:10px">
+          <input type="checkbox" v-model="applyCollabsWholeWeek" />
+          <span>Appliquer également sur toute la semaine pour ces collaborateurs</span>
+        </label>
+      </div>
+
+      <!-- Appliquer sur toute la semaine -->
+      <div class="apply-section">
+        <div class="section-title"><CalendarDays :size="11" /> Appliquer sur toute la semaine</div>
+        <label class="week-check">
+          <input type="checkbox" v-model="applyWholeWeek" />
+          <span>Répliquer ce planning sur les autres jours de la semaine pour {{ ressource.prenom }}</span>
+        </label>
+        <p v-if="applyWholeWeek || applyCollabsWholeWeek" class="week-hint">
+          Les samedis et jours fériés sont exclus. Les jours déjà planifiés seront écrasés.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-ghost" @click="step = 1">← Retour</button>
+        <button class="btn-save" @click="confirm">Confirmer</button>
       </div>
     </div>
   </div>
@@ -167,21 +257,131 @@
   background: transparent; color: var(--text);
 }
 .btn-ghost:hover { background: var(--bg-hover); }
+
+/* Badge heures */
+.heures-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.8125rem; font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 3px 10px; border-radius: 999px;
+}
+
+/* Bouton croix */
+.btn-close {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.btn-close:hover { background: var(--bg-hover); color: var(--text); }
+
+/* Bouton corbeille (supprimer bloc) */
+.btn-remove {
+  width: 26px; height: 26px; margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent;
+  border-radius: var(--radius-sm); color: var(--text-subtle);
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-remove:hover { background: rgba(239,68,68,0.08); color: #EF4444; border-color: rgba(239,68,68,0.3); }
+
+/* Bouton Pré-remplir */
+.btn-preset {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 12px; font-size: 0.75rem; font-weight: 600;
+  background: rgba(245,158,11,0.12); color: #D97706;
+  border: 1px solid rgba(245,158,11,0.3); border-radius: var(--radius-md);
+  cursor: pointer; transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-preset:hover { background: rgba(245,158,11,0.22); }
+
+/* Bouton Ajouter (formulaire) */
+.btn-add {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 12px; font-size: 0.75rem; font-weight: 600;
+  background: var(--accent); color: #fff;
+  border: none; border-radius: var(--radius-md);
+  cursor: pointer; transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-add:hover    { background: var(--accent-hover); }
+.btn-add:disabled { opacity: 0.4; cursor: default; }
+
+/* Bouton Valider */
+.btn-save {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 18px; border-radius: 8px; font-size: 0.8125rem; font-weight: 600;
+  background: var(--accent); color: #fff;
+  border: none; cursor: pointer; transition: background 0.15s, transform 0.1s;
+}
+.btn-save:hover    { background: var(--accent-hover); }
+.btn-save:active   { transform: scale(0.97); }
+.btn-save:disabled { opacity: 0.4; cursor: default; }
+
+/* Étape 2 — sections */
+.apply-section {
+  padding: 0 20px 16px;
+  border-top: 1px solid var(--border);
+}
+.collab-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 180px; overflow-y: auto;
+  margin-top: 8px;
+}
+.collab-check {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 0.8125rem;
+  transition: background 0.12s;
+}
+.collab-check:hover { background: var(--bg-hover); }
+.collab-check input { cursor: pointer; accent-color: var(--accent); }
+.quick-actions {
+  display: flex; gap: 6px; margin-top: 8px;
+}
+.btn-ghost-xs {
+  padding: 2px 10px; border-radius: 6px; font-size: 0.6875rem;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); cursor: pointer;
+}
+.btn-ghost-xs:hover { background: var(--bg-hover); color: var(--text); }
+
+.week-check {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 0.8125rem; cursor: pointer; margin-top: 8px;
+}
+.week-check input { cursor: pointer; accent-color: var(--accent); margin-top: 2px; flex-shrink: 0; }
+.week-hint {
+  font-size: 0.75rem; color: #D97706;
+  background: rgba(245,158,11,0.08); border-radius: 8px;
+  padding: 6px 10px; margin-top: 8px;
+}
 </style>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { X, Trash2, Plus } from 'lucide-vue-next'
+import { X, Trash2, Plus, Zap, Users, CalendarDays, Clock } from 'lucide-vue-next'
 import { useAdminStore, TIME_SLOTS } from '@/stores/adminStore'
 import { ACTIVITY_MAPPING } from '@/stores/dataStore'
 
 const props = defineProps({
-  ressource: { type: Object, required: true }, // { nom, prenom, idPersonne, activites }
-  date:      { type: Date,   required: true },
+  ressource:   { type: Object,  required: true }, // { nom, prenom, idPersonne, activites }
+  date:        { type: Date,    required: true },
+  otherCollabs: { type: Array,  default: () => [] }, // autres collabs actifs ce jour
 })
 const emit = defineEmits(['close', 'saved'])
 
 const admin = useAdminStore()
+
+/* ── Étapes ── */
+const step                = ref(1)
+const selectedCollabs      = ref([])
+const applyWholeWeek       = ref(false)
+const applyCollabsWholeWeek = ref(false)
 
 /* ── Données ── */
 const blocks = ref(admin.parseBlocks(props.ressource.activites || []))
@@ -190,6 +390,71 @@ const overlapError = ref('')
 
 /* ── Options activités ── */
 const activityOptions = Object.entries(ACTIVITY_MAPPING)
+
+/* ── Presets créneaux (slot = (heure*60 + min - 480) / 15) ── */
+// Matin  : 8h-12h    + 13h-16h30   → slots 0-16  + 20-34
+// Midi   : 8h30-12h30 + 13h30-17h  → slots 2-18  + 22-36
+// Aprem  : 9h-12h30  + 13h30-17h30 → slots 4-18  + 22-38
+// Soir   : 9h15-13h15 + 14h30-18h  → slots 5-21  + 26-40
+// PiloteBO: 8h45-12h45 + 13h30-17h → slots 3-19  + 22-36
+const S_MATIN   = [{ startSlot: 0, endSlot: 16 }, { startSlot: 20, endSlot: 34 }]
+const S_MIDI    = [{ startSlot: 2, endSlot: 18 }, { startSlot: 22, endSlot: 36 }]
+const S_APREM   = [{ startSlot: 4, endSlot: 18 }, { startSlot: 22, endSlot: 38 }]
+const S_SOIR    = [{ startSlot: 5, endSlot: 21 }, { startSlot: 26, endSlot: 40 }]
+const S_PILOTEBO = [{ startSlot: 3, endSlot: 19 }, { startSlot: 22, endSlot: 36 }]
+
+const PRESETS = {
+  // Matin (bureau, agence, TLT, TLT agence, Win11)
+  '0':  S_MATIN,   // Matin
+  '9':  S_MATIN,   // Agence Matin
+  '20': S_MATIN,   // TLT Matin
+  '12': S_MATIN,   // TLT Agence Matin
+  '28': S_MATIN,   // MatinW11
+  // Midi
+  '1':  S_MIDI,    // Midi
+  '10': S_MIDI,    // Agence Midi
+  '21': S_MIDI,    // TLT Midi
+  '13': S_MIDI,    // TLT Agence Midi
+  // Après-midi
+  '15': S_APREM,   // Aprem
+  '16': S_APREM,   // Agence APREM
+  '22': S_APREM,   // TLT APREM
+  '17': S_APREM,   // TLT Agence APREM
+  // Soir
+  '2':  S_SOIR,    // Soir
+  '11': S_SOIR,    // Agence Soir
+  '23': S_SOIR,    // TLT Soir
+  '14': S_SOIR,    // TLT Agence Soir
+  '29': S_SOIR,    // SoirW11
+  // Autres
+  '26': S_PILOTEBO, // PiloteBO
+}
+
+function onCodeChange() {
+  newBlock.value.startSlot = 0
+  newBlock.value.endSlot   = 4
+  overlapError.value = ''
+}
+
+function applyPreset() {
+  overlapError.value = ''
+  const preset = PRESETS[newBlock.value.code]
+  if (!preset) return
+
+  // Vérifie les chevauchements avec les blocs existants
+  const hasOverlap = preset.some(p =>
+    blocks.value.some(b => p.startSlot < b.endSlot && p.endSlot > b.startSlot)
+  )
+  if (hasOverlap) {
+    overlapError.value = 'Ces créneaux chevauchent une activité existante.'
+    return
+  }
+
+  const newBlocks = preset.map(p => ({ code: newBlock.value.code, ...p }))
+  blocks.value = [...blocks.value, ...newBlocks]
+    .sort((a, b) => a.startSlot - b.startSlot)
+  newBlock.value = { code: '', startSlot: 0, endSlot: 4 }
+}
 
 /* ── Label date ── */
 const DAYS_FR   = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
@@ -202,6 +467,19 @@ const dateLabel = computed(() => {
 /* ── Timeline preview ── */
 const previewSlots = computed(() => admin.buildActivites(blocks.value))
 const timeLabels   = ['08h','10h','12h','14h','16h','18h','']
+
+/* ── Heures travaillées ── */
+const ABSENCE_CODES = new Set(['30', '6', '8']) // CP, Indisponible, Récup
+const totalHeures = computed(() => {
+  const slots = previewSlots.value.filter(a => a && a !== '' && !ABSENCE_CODES.has(String(a))).length
+  return slots * 0.25
+})
+function fmtHeures(h) {
+  const totalMin = Math.round(h * 60)
+  const hh = Math.floor(totalMin / 60)
+  const mm = totalMin % 60
+  return mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`
+}
 
 function slotColor(code) {
   return code ? (ACTIVITY_MAPPING[code]?.couleur.replace(', 1)', ', 0.8)') || '#ccc') : 'var(--border)'
@@ -238,8 +516,20 @@ function removeBlock(i) {
   blocks.value = blocks.value.filter((_, idx) => idx !== i)
 }
 
-/* ── Sauvegarde ── */
-function save() {
-  emit('saved', admin.buildActivites(blocks.value))
+/* ── Navigation étapes ── */
+function goToStep2() {
+  selectedCollabs.value       = []
+  applyWholeWeek.value        = false
+  applyCollabsWholeWeek.value = false
+  step.value = 2
+}
+
+function confirm() {
+  emit('saved', {
+    activites:           admin.buildActivites(blocks.value),
+    toCollabIds:         selectedCollabs.value,
+    applyWholeWeek:      applyWholeWeek.value,
+    applyCollabsWholeWeek: applyCollabsWholeWeek.value,
+  })
 }
 </script>

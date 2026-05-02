@@ -54,6 +54,7 @@
             v-for="person in filteredPersons"
             :key="person"
             class="sidebar-item"
+            :class="{ active: currentPerson === person }"
             @click="selectPerson(person)"
           >
             <div class="flex items-center gap-2" style="min-width:0">
@@ -76,7 +77,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useDataStore } from '@/stores/dataStore'
 import { X, Search } from 'lucide-vue-next'
@@ -84,6 +85,13 @@ import { X, Search } from 'lucide-vue-next'
 const ui     = useUiStore()
 const data   = useDataStore()
 const router = useRouter()
+const route  = useRoute()
+
+const currentPerson = computed(() =>
+  route.path.startsWith('/person/')
+    ? decodeURIComponent(String(route.params.name || ''))
+    : ''
+)
 
 const filteredPersons = computed(() =>
   data.activePersons().filter(n =>

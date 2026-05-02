@@ -42,76 +42,8 @@
         <!-- Contenu -->
         <div class="admin-body">
 
-          <!-- Onglet Accès -->
-          <div v-if="tab === 'acces'">
-            <div class="admin-info-box" style="margin-bottom:16px">
-              <Info :size="13" style="flex-shrink:0;margin-top:1px;color:var(--accent)" />
-              <span>
-                Le premier administrateur doit être activé manuellement dans la
-                <a href="https://console.firebase.google.com" target="_blank">console Firebase</a>
-                : <code>Firestore → personnes → {uid} → isAdmin: true</code>
-              </span>
-            </div>
-
-            <div style="margin-bottom:12px;color:var(--text-muted);font-size:0.75rem">
-              {{ userStore.users.length }} collaborateur{{ userStore.users.length > 1 ? 's' : '' }}
-              · {{ adminCount }} admin{{ adminCount > 1 ? 's' : '' }}
-            </div>
-
-            <div v-if="userStore.loading" style="padding:24px;text-align:center;color:var(--text-muted)">
-              Chargement…
-            </div>
-            <table v-else class="w-full" style="font-size:0.8125rem">
-              <thead>
-                <tr>
-                  <th>Collaborateur</th>
-                  <th class="desktop-only">Email</th>
-                  <th>Administrateur</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="u in userStore.users" :key="u.uid" :class="{ 'admin-row': u.isAdmin }">
-                  <td>
-                    <div style="display:flex;align-items:center;gap:8px">
-                      <div
-                        class="person-avatar"
-                        style="width:28px;height:28px;font-size:0.625rem;flex-shrink:0"
-                        :style="u.isAdmin ? 'background:linear-gradient(135deg,#6366F1,#A78BFA)' : ''"
-                      >
-                        {{ `${u.nom?.[0] ?? ''}${u.prenom?.[0] ?? ''}`.toUpperCase() }}
-                      </div>
-                      <div>
-                        <div style="font-weight:600">{{ u.nom }} {{ u.prenom }}</div>
-                        <div style="font-size:0.6875rem;color:var(--text-muted)">{{ u.niveau }}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td class="desktop-only" style="color:var(--text-muted)">{{ u.email || '—' }}</td>
-                  <td>
-                    <label
-                      class="toggle-label flex items-center gap-2"
-                      :class="isSelf(u) ? '' : 'cursor-pointer'"
-                    >
-                      <input
-                        type="checkbox"
-                        :checked="u.isAdmin"
-                        :disabled="isSelf(u)"
-                        class="toggle-input"
-                        @change="toggleAdmin(u)"
-                      >
-                      <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                      <span class="toggle-text" :style="u.isAdmin ? 'color:var(--accent);font-weight:600' : ''">
-                        {{ u.isAdmin ? 'Admin' : 'User' }}
-                      </span>
-                    </label>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
           <!-- Onglet Collaborateurs -->
-          <div v-else-if="tab === 'collab'">
+          <div v-if="tab === 'collab'">
             <AdminCollaborateurs />
           </div>
 
@@ -155,47 +87,28 @@
 .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .admin-body { padding: 20px; }
 
-.admin-info-box {
-  display: flex; align-items: flex-start; gap: 8px;
-  background: var(--accent-light);
-  border: 1px solid rgba(99,102,241,0.2);
-  border-radius: 10px; padding: 10px 12px;
-  font-size: 0.75rem; color: var(--text-muted); line-height: 1.5;
-}
-.admin-info-box a { color: var(--accent); text-decoration: underline; }
-.admin-info-box code {
-  font-family: var(--font-mono); font-size: 0.6875rem;
-  background: rgba(99,102,241,0.1); padding: 1px 5px; border-radius: 4px;
-}
-.admin-row { background: rgba(99,102,241,0.03); }
 </style>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { Shield, ShieldOff, Info, Users, CalendarDays } from 'lucide-vue-next'
+import { ref, watch } from 'vue'
+import { Shield, ShieldOff, Users, CalendarDays } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
-import { useAuthStore } from '@/stores/authStore'
 import AdminCollaborateurs from '@/components/admin/AdminCollaborateurs.vue'
 import AdminPlanning       from '@/components/admin/AdminPlanning.vue'
 
 const userStore = useUserStore()
-const auth      = useAuthStore()
 
-const tab = ref('acces')
+const tab = ref('collab')
 const tabs = [
-  { key: 'acces',    label: 'Accès',          icon: Shield       },
   { key: 'collab',   label: 'Collaborateurs', icon: Users        },
   { key: 'planning', label: 'Planning',       icon: CalendarDays },
 ]
 
-onMounted(() => {
-  if (userStore.isAdmin) userStore.loadAllUsers()
-})
-
-const adminCount = computed(() => userStore.users.filter(u => u.isAdmin).length)
-function isSelf(u)      { return u.uid === auth.user?.uid }
-
-async function toggleAdmin(u) {
-  await userStore.setAdmin(u.uid, !u.isAdmin)
-}
+// Charge la liste dès que isAdmin devient true (y compris au refresh,
+// quand Firebase finit de s'initialiser après le montage du composant)
+watch(
+  () => userStore.isAdmin,
+  (val) => { if (val) userStore.loadAllUsers() },
+  { immediate: true }
+)
 </script>

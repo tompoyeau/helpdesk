@@ -6,7 +6,7 @@
         <Search class="search-icon" :size="12" />
         <input v-model="search" placeholder="Rechercher…" class="search-input" />
       </div>
-      <button class="btn-primary" @click="openCreate">
+      <button class="btn-add" @click="openCreate">
         <UserPlus :size="13" /> Nouveau collaborateur
       </button>
     </div>
@@ -22,60 +22,77 @@
     </div>
 
     <!-- Tableau -->
-    <table v-else class="w-full" style="font-size:0.8125rem">
-      <thead>
-        <tr>
-          <th>Collaborateur</th>
-          <th class="desktop-only">Email</th>
-          <th class="desktop-only">Arrivée</th>
-          <th class="desktop-only">Départ</th>
-          <th>Admin</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="u in filtered" :key="u.uid">
-          <td>
-            <div style="display:flex;align-items:center;gap:8px">
-              <div
-                class="person-avatar"
-                style="width:28px;height:28px;font-size:0.625rem;flex-shrink:0"
-                :style="u.isAdmin ? 'background:linear-gradient(135deg,#6366F1,#A78BFA)' : ''"
-              >
-                {{ `${u.nom?.[0] ?? ''}${u.prenom?.[0] ?? ''}`.toUpperCase() }}
+    <div v-else class="table-wrap">
+      <table class="collab-table">
+        <thead>
+          <tr>
+            <th>Collaborateur</th>
+            <th class="col-extra">Niveau</th>
+            <th class="col-extra">Rôle</th>
+            <th class="col-extra">Email</th>
+            <th class="col-extra">Arrivée</th>
+            <th class="col-extra">Départ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in filtered" :key="u.uid" class="row-clickable" @click="openEdit(u)">
+            <!-- Collaborateur : avatar + nom prénom coloré si présent aujourd'hui -->
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div
+                  class="person-avatar"
+                  style="width:28px;height:28px;font-size:0.625rem;flex-shrink:0"
+                  :class="{ 'avatar-active': isActiveToday(u) }"
+                >
+                  {{ `${u.nom?.[0] ?? ''}${u.prenom?.[0] ?? ''}`.toUpperCase() }}
+                </div>
+                <span class="collab-name">{{ u.nom }} {{ u.prenom }}</span>
               </div>
-              <div>
-                <div style="font-weight:600">{{ u.nom }} {{ u.prenom }}</div>
-                <div style="font-size:0.6875rem;color:var(--text-muted)">{{ u.niveau }} · {{ u.role }}</div>
+            </td>
+
+            <!-- Niveau -->
+            <td class="col-extra">
+              <span v-if="u.niveau" class="badge-niveau">{{ u.niveau }}</span>
+              <span v-else style="color:var(--text-subtle)">—</span>
+            </td>
+
+            <!-- Rôle -->
+            <td class="col-extra" style="color:var(--text-muted);white-space:nowrap">
+              {{ u.role || '—' }}
+            </td>
+
+            <!-- Email -->
+            <td class="col-extra" style="color:var(--text-muted);font-size:0.75rem">
+              {{ u.email || '—' }}
+            </td>
+
+            <!-- Arrivée -->
+            <td class="col-extra" style="font-family:var(--font-mono);font-size:0.75rem;white-space:nowrap">
+              {{ fmtDate(u.arrivee) }}
+            </td>
+
+            <!-- Départ -->
+            <td class="col-extra" style="font-family:var(--font-mono);font-size:0.75rem;white-space:nowrap">
+              {{ fmtDate(u.depart) }}
+            </td>
+
+            <!-- Actions -->
+            <td>
+              <div style="display:flex;gap:4px;justify-content:flex-end">
+                <button
+                  class="btn-action btn-action-danger"
+                  title="Supprimer"
+                  @click.stop="confirmDelete(u)"
+                >
+                  <Trash2 :size="12" />
+                </button>
               </div>
-            </div>
-          </td>
-          <td class="desktop-only" style="color:var(--text-muted)">{{ u.email || '—' }}</td>
-          <td class="desktop-only" style="font-family:var(--font-mono);font-size:0.75rem">{{ fmtDate(u.arrivee) }}</td>
-          <td class="desktop-only" style="font-family:var(--font-mono);font-size:0.75rem">{{ fmtDate(u.depart) }}</td>
-          <td>
-            <span :class="u.isAdmin ? 'badge-admin' : 'badge-user'">
-              {{ u.isAdmin ? 'Admin' : 'User' }}
-            </span>
-          </td>
-          <td>
-            <div style="display:flex;gap:4px;justify-content:flex-end">
-              <button class="btn-icon btn-icon-sm" title="Modifier" @click="openEdit(u)">
-                <Pencil :size="12" />
-              </button>
-              <button
-                class="btn-icon btn-icon-sm"
-                style="color:#EF4444"
-                title="Supprimer"
-                @click="confirmDelete(u)"
-              >
-                <Trash2 :size="12" />
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Confirmation suppression -->
     <div v-if="deleteTarget" class="delete-confirm">
@@ -103,18 +120,79 @@
 </template>
 
 <style scoped>
+/* Toolbar */
 .collab-toolbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
 }
-.badge-admin, .badge-user {
+
+/* Bouton "Nouveau collaborateur" */
+.btn-add {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8125rem; font-weight: 600;
+  border: none; border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.btn-add:hover  { background: var(--accent-hover); }
+.btn-add:active { transform: scale(0.97); }
+
+/* Tableau */
+.table-wrap { overflow-x: auto; }
+.collab-table {
+  width: 100%;
+  font-size: 0.8125rem;
+  border-collapse: collapse;
+}
+
+/* Colonnes masquées sur mobile */
+.col-extra { display: table-cell; }
+@media (max-width: 768px) { .col-extra { display: none; } }
+
+/* Nom collaborateur */
+.collab-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Avatar coloré si présent aujourd'hui */
+.avatar-active {
+  background: linear-gradient(135deg, var(--accent) 0%, #8B5CF6 100%) !important;
+  color: #fff !important;
+}
+
+/* Badge niveau */
+.badge-niveau {
   display: inline-block;
   font-size: 0.6875rem; font-weight: 600;
   padding: 2px 8px; border-radius: 999px;
+  background: var(--bg-surface); color: var(--text-muted);
+  white-space: nowrap;
 }
-.badge-admin { background: var(--accent-light); color: var(--accent); }
-.badge-user  { background: var(--bg-surface); color: var(--text-muted); }
 
+/* Boutons d'action icône */
+.btn-action {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-action:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-input); }
+.btn-action-danger:hover { background: rgba(239,68,68,0.08); color: #EF4444; border-color: rgba(239,68,68,0.3); }
+
+/* Ligne cliquable */
+.row-clickable { cursor: pointer; }
+.row-clickable:hover td { background: var(--bg-hover); }
+
+/* Confirmation suppression */
 .delete-confirm {
   display: flex; align-items: center; gap: 10px;
   background: rgba(245,158,11,0.08);
@@ -136,7 +214,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Search, UserPlus, Pencil, Trash2, AlertTriangle } from 'lucide-vue-next'
+import { Search, UserPlus, Trash2, AlertTriangle } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
 import { useAdminStore } from '@/stores/adminStore'
 import CollaborateurModal from './CollaborateurModal.vue'
@@ -150,6 +228,12 @@ const editTarget   = ref(null)
 const deleteTarget = ref(null)
 const deleting     = ref(false)
 
+const today = new Date()
+
+function isActiveToday(u) {
+  return admin.isActiveOn(u, today)
+}
+
 const filtered = computed(() => {
   const q = search.value.toLowerCase()
   return userStore.users.filter(u =>
@@ -158,7 +242,6 @@ const filtered = computed(() => {
 })
 
 function fmtDate(str) {
-  // "18 04 2025" → "18/04/2025"
   return str ? str.split(' ').join('/') : '—'
 }
 

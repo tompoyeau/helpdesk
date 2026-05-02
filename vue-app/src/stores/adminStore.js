@@ -59,9 +59,12 @@ export const useAdminStore = defineStore('admin', () => {
   async function loadDayPlanning(date) {
     const id   = dateToId(date)
     const snap = await getDoc(doc(db, 'plannings', id))
-    return snap.exists()
-      ? { id, exists: true,  ressources: snap.data().ressources || [] }
-      : { id, exists: false, ressources: [] }
+    if (!snap.exists()) return { id, exists: false, filled: false, ressources: [] }
+
+    const ressources = snap.data().ressources || []
+    // Compte les collaborateurs ayant au moins un créneau renseigné
+    const filledCount = ressources.filter(r => (r.activites || []).some(a => a && a !== '')).length
+    return { id, exists: true, filledCount, total: ressources.length, ressources }
   }
 
   async function saveDayPlanning(date, ressources) {
