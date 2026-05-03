@@ -3,7 +3,7 @@
     <!-- Navigation semaine -->
     <div class="planning-nav" style="margin-bottom:16px">
       <button class="btn-icon" @click="weekOffset--"><ChevronLeft :size="16" /></button>
-      <span class="week-label" @click="weekPickerOpen = true">{{ weekLabel }}</span>
+      <WeekPicker :week-offset="weekOffset" :week-dates="weekDates" @update:week-offset="weekOffset = $event" />
       <button class="btn-icon" @click="weekOffset++"><ChevronRight :size="16" /></button>
       <button class="btn-primary" style="font-size:0.8125rem;padding:6px 12px" @click="weekOffset = 0">
         <CalendarCheck :size="12" /> Aujourd'hui
@@ -49,6 +49,15 @@
         <div style="display:flex;gap:8px;align-items:center">
           <span v-if="admin.saving" style="font-size:0.75rem;color:var(--text-muted)">Enregistrement…</span>
           <span v-else-if="saveSuccess" class="save-success"><Check :size="12" /> Sauvegardé</span>
+          <button
+            class="btn-sort"
+            :class="{ 'btn-sort-active': sortByHoraire }"
+            title="Trier par type d'horaire"
+            @click="sortByHoraire = !sortByHoraire"
+          >
+            <ArrowUpDown :size="12" />
+            {{ sortByHoraire ? 'Catégorie' : 'Alphabétique' }}
+          </button>
         </div>
       </div>
 
@@ -62,7 +71,7 @@
         <table class="w-full" style="font-size:0.8125rem">
           <thead>
             <tr>
-              <th>Collaborateur</th>
+              <th style="width:180px">Collaborateur</th>
               <th>Activités prévues</th>
               <th style="width:60px;text-align:center">Heures</th>
               <th style="width:80px"></th>
@@ -80,12 +89,21 @@
               </td>
               <td>
                 <div class="mini-timeline">
-                  <div
-                    v-for="(code, i) in r.activites"
-                    :key="i"
-                    class="mini-slot"
-                    :style="{ background: slotColor(code) }"
-                  />
+                  <template v-for="(block, i) in getTimelineBlocks(r.activites)" :key="i">
+                    <div
+                      v-if="block.empty"
+                      class="tl-gap"
+                      :style="{ width: block.width + '%' }"
+                    />
+                    <div
+                      v-else
+                      class="tl-block"
+                      :style="{ width: block.width + '%', background: block.color }"
+                      :title="block.label"
+                    >
+                      <span v-if="block.width >= 10" class="tl-label" :style="{ color: block.textColor }">{{ block.label }}</span>
+                    </div>
+                  </template>
                 </div>
               </td>
               <td style="text-align:center">
@@ -120,14 +138,6 @@
         </table>
       </template>
     </div>
-
-    <!-- Modal sélection semaine -->
-    <WeekPickerModal
-      v-if="weekPickerOpen"
-      :current-offset="weekOffset"
-      @pick="onWeekPicked"
-      @close="weekPickerOpen = false"
-    />
 
     <!-- Modal édition personne/jour -->
     <DayEditorModal
@@ -177,13 +187,6 @@
 .btn-action-confirm       { color: #059669; border-color: rgba(52,211,153,0.4); }
 .btn-action-confirm:hover { background: rgba(52,211,153,0.1); color: #059669; }
 
-.week-label {
-  font-weight: 600; font-size: 0.875rem;
-  min-width: 200px; text-align: center;
-  cursor: pointer; border-radius: var(--radius-sm);
-  padding: 4px 8px; transition: background 0.15s;
-}
-.week-label:hover { background: rgba(255,255,255,0.15); }
 .days-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -234,15 +237,45 @@
 .day-editor-header h3 { font-size: 0.875rem; font-weight: 700; margin: 0; }
 
 .mini-timeline {
-  display: flex; height: 14px; border-radius: 4px; overflow: hidden;
-  border: 1px solid var(--border); width: 100%; max-width: 240px;
+  display: flex; height: 24px; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--border); width: 100%;
+  background: var(--bg-surface);
+  gap: 1px;
 }
-.mini-slot { flex: 1; }
+.tl-gap {
+  flex-shrink: 0;
+  background: transparent;
+}
+.tl-block {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 0;
+}
+.tl-label {
+  font-size: 0.625rem; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 0 5px;
+  pointer-events: none;
+  max-width: 100%;
+  letter-spacing: 0.01em;
+}
 
 .save-success {
   font-size: 0.75rem; color: #059669;
   display: inline-flex; align-items: center; gap: 4px;
 }
+
+.btn-sort {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; font-size: 0.75rem; font-weight: 600;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-sort:hover       { background: var(--bg-hover); color: var(--text); }
+.btn-sort-active      { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
 
 @media (max-width: 768px) {
   .days-grid { grid-template-columns: repeat(3, 1fr); }
@@ -250,17 +283,17 @@
 </style>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X,
+  Check, Plus, Users, Eraser, X, ArrowUpDown,
 } from 'lucide-vue-next'
 import { useAdminStore } from '@/stores/adminStore'
 import { useUserStore } from '@/stores/userStore'
 import { useDataStore } from '@/stores/dataStore'
 import { ACTIVITY_MAPPING } from '@/stores/dataStore'
-import DayEditorModal    from './DayEditorModal.vue'
-import WeekPickerModal   from './WeekPickerModal.vue'
+import DayEditorModal from './DayEditorModal.vue'
+import WeekPicker    from '@/components/planning/WeekPicker.vue'
 
 const admin     = useAdminStore()
 const userStore = useUserStore()
@@ -269,13 +302,6 @@ const data      = useDataStore()
 const DAYS      = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
 const DAYS_FULL = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
 const MONTHS    = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
-
-const weekPickerOpen = ref(false)
-
-function onWeekPicked(offset) {
-  weekOffset.value = offset
-  weekPickerOpen.value = false
-}
 
 /* ── Semaine ── */
 const weekOffset = ref(0)
@@ -295,10 +321,6 @@ const weekDates = computed(() => {
   })
 })
 
-const weekLabel = computed(() => {
-  const [first, last] = [weekDates.value[0], weekDates.value[5]]
-  return `${first.getDate()} ${MONTHS[first.getMonth()]} → ${last.getDate()} ${MONTHS[last.getMonth()]} ${last.getFullYear()}`
-})
 
 function fmtId(date) { return admin.dateToId(date) }
 function isToday(date) { return fmtId(date) === fmtId(new Date()) }
@@ -354,11 +376,17 @@ async function checkWeekStatus() {
   }
 }
 
+// Chargement initial : attend que le composant soit monté
+onMounted(() => {
+  checkWeekStatus()
+  selectDay(weekDates.value[0])
+})
+
+// Changement de semaine : re-charge le statut et sélectionne le lundi
 watch(weekDates, (newDates) => {
   checkWeekStatus()
-  // Auto-sélectionne le lundi de la nouvelle semaine
   selectDay(newDates[0])
-}, { immediate: true })
+})
 
 /* ── Sélection d'un jour ── */
 const selectedDate  = ref(null)
@@ -396,13 +424,62 @@ const mergedRessources = computed(() => {
       activites: new Array(45).fill(''),
     }))
 
-  return [...existing, ...fromPersonnes]
-    .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
+  const list = [...existing, ...fromPersonnes]
+
+  if (sortByHoraire.value) {
+    return list.sort((a, b) => {
+      const diff = horaireRank(a.activites) - horaireRank(b.activites)
+      if (diff !== 0) return diff
+      return `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr')
+    })
+  }
+
+  return list.sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
 })
 
-/* ── Couleur slot timeline ── */
-function slotColor(code) {
-  return code ? (ACTIVITY_MAPPING[code]?.couleur.replace(', 1)', ', 0.5)') || '#ccc') : 'transparent'
+/* ── Couleur texte contrastée selon le fond ── */
+function contrastColor(rgbaStr) {
+  // Parse "rgba(r, g, b, a)"
+  const m = rgbaStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+  if (!m) return 'rgba(0,0,0,0.7)'
+  const [r, g, b] = [+m[1], +m[2], +m[3]].map(c => {
+    c /= 255
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  })
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return luminance > 0.35 ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.9)'
+}
+
+/* ── Blocs timeline groupés ── */
+function getTimelineBlocks(activites) {
+  if (!Array.isArray(activites)) return []
+  const blocks = []
+  let i = 0
+  while (i < 45) {
+    const code = activites[i]
+    if (!code || code === '') {
+      // Gap vide : regroupe les slots consécutifs vides
+      let j = i + 1
+      while (j < 45 && (!activites[j] || activites[j] === '')) j++
+      blocks.push({ empty: true, width: (j - i) / 45 * 100 })
+      i = j
+    } else {
+      // Bloc d'activité : regroupe les slots consécutifs du même code
+      let j = i + 1
+      while (j < 45 && activites[j] === code) j++
+      const mapping = ACTIVITY_MAPPING[String(code)]
+      const color = mapping?.couleur || 'rgba(200,200,200,1)'
+      blocks.push({
+        empty: false,
+        width: (j - i) / 45 * 100,
+        color,
+        textColor: contrastColor(color),
+        label: mapping?.categorie || String(code),
+      })
+      i = j
+    }
+  }
+  return blocks
 }
 
 /* ── Calcul des heures travaillées ── */
@@ -418,6 +495,45 @@ function fmtHeures(h) {
   const hh = Math.floor(totalMin / 60)
   const mm = totalMin % 60
   return mm === 0 ? `${hh}h` : `${hh}h${String(mm).padStart(2, '0')}`
+}
+
+/* ── Tri par type d'horaire ── */
+const sortByHoraire = ref(false)
+
+// Rang combiné = créneau * 10 + lieu
+// Créneau : Matin=0, Midi=1, Aprem=2, Soir=3, PiloteBO=4
+// Lieu    : Client=0, TLT=1, TLT Agence=2, Agence=3, W11=4
+const HORAIRE_RANK = {
+  // Matin
+  '0':  0,   // Matin client
+  '20': 1,   // TLT Matin
+  '12': 2,   // TLT Agence Matin
+  '9':  3,   // Agence Matin
+  '28': 4,   // Matin W11
+  // Midi
+  '1':  10,  // Midi client
+  '21': 11,  // TLT Midi
+  '13': 12,  // TLT Agence Midi
+  '10': 13,  // Agence Midi
+  // Aprem
+  '15': 20,  // Aprem client
+  '22': 21,  // TLT Aprem
+  '17': 22,  // TLT Agence Aprem
+  '16': 23,  // Agence Aprem
+  // Soir
+  '2':  30,  // Soir client
+  '23': 31,  // TLT Soir
+  '14': 32,  // TLT Agence Soir
+  '11': 33,  // Agence Soir
+  '29': 34,  // Soir W11
+  // PiloteBO (après tous les créneaux)
+  '26': 40,
+}
+
+function horaireRank(activites) {
+  if (!Array.isArray(activites)) return 99
+  const first = activites.find(a => a && a !== '')
+  return first !== undefined ? (HORAIRE_RANK[String(first)] ?? 99) : 99
 }
 
 /* ── Éditeur personne/jour ── */

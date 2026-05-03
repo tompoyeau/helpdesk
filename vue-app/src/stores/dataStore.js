@@ -143,9 +143,9 @@ export const useDataStore = defineStore('data', () => {
 
   /* ── Personnes actives (computed — mis en cache automatiquement) ── */
   const activePersonsList = computed(() => {
-    if (!filterActive.value || !Object.keys(_personnesData.value).length)
-      return _persons.value
-
+    // Source de vérité : uniquement la collection personnes.
+    // On ignore _persons (construit depuis les plannings) pour éviter les fantômes
+    // (collabs présents dans d'anciens plannings mais absents/supprimés de personnes).
     const parseDate = str => {
       if (!str) return null
       const parts = str.trim().split(' ')
@@ -157,22 +157,21 @@ export const useDataStore = defineStore('data', () => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const activeIds = new Set(
-      Object.values(_personnesData.value)
-        .filter(p => {
+    const allPersonnes = Object.values(_personnesData.value)
+      .filter(p => p.nom && p.prenom)
+
+    const list = (filterActive.value
+      ? allPersonnes.filter(p => {
           const arrivee = parseDate(p.arrivee)
           const depart  = parseDate(p.depart)
           if (!arrivee || today < arrivee) return false
           if (depart && today > depart)    return false
           return true
         })
-        .map(p => p.id)
-    )
+      : allPersonnes
+    ).map(p => `${p.nom} ${p.prenom}`)
 
-    return _persons.value.filter(name => {
-      const id = _nameToPersonId.value[name]
-      return id && activeIds.has(id)
-    })
+    return list.sort((a, b) => a.localeCompare(b, 'fr'))
   })
 
   // Compatibilité : garde activePersons() comme fonction pour les composants existants
@@ -181,8 +180,8 @@ export const useDataStore = defineStore('data', () => {
   /* ── Chargement ── */
 
   async function loadPlanning() {
-    loading.value = true
-    error.value   = null
+    // Ne gère plus loading ici — c'est init() qui le pilote
+    error.value = null
     try {
       const snapshot = await getDocs(collection(db, 'plannings'))
       const rawData  = []
@@ -227,8 +226,6 @@ export const useDataStore = defineStore('data', () => {
     } catch (e) {
       error.value = e.message
       if (import.meta.env.DEV) console.error('❌ Firestore :', e)
-    } finally {
-      loading.value = false
     }
   }
 
@@ -260,7 +257,15 @@ export const useDataStore = defineStore('data', () => {
     filterStart.value = fmtDate(oneYearAgo)
     filterEnd.value   = fmtDate(today)
 
-    await Promise.all([loadPlanning(), loadPersonnes()])
+    // loading reste true jusqu'à ce que LES DEUX chargements soient terminés
+    // (évite le race condition où la sidebar se rend avec _personnesData vide)
+    loading.value = true
+    try {
+      await Promise.all([loadPlanning(), loadPersonnes()])
+    } finally {
+      loading.value = false
+    }
+
     computeFiltered()
   }
 

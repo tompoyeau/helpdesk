@@ -6,9 +6,16 @@
         <Search class="search-icon" :size="12" />
         <input v-model="search" placeholder="Rechercher…" class="search-input" />
       </div>
-      <button class="btn-add" @click="openCreate">
-        <UserPlus :size="13" /> Nouveau collaborateur
-      </button>
+      <div class="toolbar-right">
+        <label class="toggle-label flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" v-model="filterActive" class="toggle-input">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-text">Actifs seulement</span>
+        </label>
+        <button class="btn-add" @click="openCreate">
+          <UserPlus :size="13" /> Nouveau collaborateur
+        </button>
+      </div>
     </div>
 
     <!-- Compteur -->
@@ -32,7 +39,6 @@
             <th class="col-extra">Email</th>
             <th class="col-extra">Arrivée</th>
             <th class="col-extra">Départ</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -76,37 +82,9 @@
             <td class="col-extra" style="font-family:var(--font-mono);font-size:0.75rem;white-space:nowrap">
               {{ fmtDate(u.depart) }}
             </td>
-
-            <!-- Actions -->
-            <td>
-              <div style="display:flex;gap:4px;justify-content:flex-end">
-                <button
-                  class="btn-action btn-action-danger"
-                  title="Supprimer"
-                  @click.stop="confirmDelete(u)"
-                >
-                  <Trash2 :size="12" />
-                </button>
-              </div>
-            </td>
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- Confirmation suppression -->
-    <div v-if="deleteTarget" class="delete-confirm">
-      <AlertTriangle :size="14" style="color:#F59E0B;flex-shrink:0" />
-      <span>
-        Supprimer <strong>{{ deleteTarget.nom }} {{ deleteTarget.prenom }}</strong> ?
-        Cette action est irréversible.
-      </span>
-      <div style="display:flex;gap:6px">
-        <button class="btn-ghost-sm" @click="deleteTarget = null">Annuler</button>
-        <button class="btn-danger-sm" :disabled="deleting" @click="doDelete">
-          {{ deleting ? '…' : 'Supprimer' }}
-        </button>
-      </div>
     </div>
 
     <!-- Modal création/édition -->
@@ -124,6 +102,9 @@
 .collab-toolbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.toolbar-right {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
 
 /* Bouton "Nouveau collaborateur" */
@@ -174,47 +155,15 @@
   white-space: nowrap;
 }
 
-/* Boutons d'action icône */
-.btn-action {
-  width: 26px; height: 26px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.btn-action:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-input); }
-.btn-action-danger:hover { background: rgba(239,68,68,0.08); color: #EF4444; border-color: rgba(239,68,68,0.3); }
-
 /* Ligne cliquable */
 .row-clickable { cursor: pointer; }
 .row-clickable:hover td { background: var(--bg-hover); }
 
-/* Confirmation suppression */
-.delete-confirm {
-  display: flex; align-items: center; gap: 10px;
-  background: rgba(245,158,11,0.08);
-  border: 1px solid rgba(245,158,11,0.3);
-  border-radius: 10px; padding: 10px 14px;
-  font-size: 0.8125rem; margin-top: 12px; flex-wrap: wrap;
-}
-.btn-ghost-sm {
-  padding: 4px 12px; border-radius: 6px; font-size: 0.75rem;
-  border: 1px solid var(--border); cursor: pointer;
-  background: transparent; color: var(--text); white-space: nowrap;
-}
-.btn-danger-sm {
-  padding: 4px 12px; border-radius: 6px; font-size: 0.75rem;
-  background: #EF4444; color: white; border: none; cursor: pointer; white-space: nowrap;
-}
-.btn-danger-sm:disabled { opacity: 0.5; cursor: default; }
 </style>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Search, UserPlus, Trash2, AlertTriangle } from 'lucide-vue-next'
+import { Search, UserPlus } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
 import { useAdminStore } from '@/stores/adminStore'
 import CollaborateurModal from './CollaborateurModal.vue'
@@ -222,12 +171,10 @@ import CollaborateurModal from './CollaborateurModal.vue'
 const userStore = useUserStore()
 const admin     = useAdminStore()
 
-const search       = ref('')
-const modalOpen    = ref(false)
-const editTarget   = ref(null)
-const deleteTarget = ref(null)
-const deleting     = ref(false)
-
+const search        = ref('')
+const filterActive  = ref(true)
+const modalOpen     = ref(false)
+const editTarget    = ref(null)
 const today = new Date()
 
 function isActiveToday(u) {
@@ -236,9 +183,10 @@ function isActiveToday(u) {
 
 const filtered = computed(() => {
   const q = search.value.toLowerCase()
-  return userStore.users.filter(u =>
-    `${u.nom} ${u.prenom} ${u.email ?? ''}`.toLowerCase().includes(q)
-  )
+  return userStore.users.filter(u => {
+    if (filterActive.value && !admin.isActiveOn(u, today)) return false
+    return `${u.nom} ${u.prenom} ${u.email ?? ''}`.toLowerCase().includes(q)
+  })
 })
 
 function fmtDate(str) {
@@ -255,18 +203,5 @@ function openEdit(u) {
   modalOpen.value  = true
 }
 
-function confirmDelete(u) {
-  deleteTarget.value = u
-}
 
-async function doDelete() {
-  deleting.value = true
-  try {
-    await admin.deletePersonne(deleteTarget.value.uid)
-    await userStore.loadAllUsers()
-    deleteTarget.value = null
-  } finally {
-    deleting.value = false
-  }
-}
 </script>

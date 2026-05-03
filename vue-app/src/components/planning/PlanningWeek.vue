@@ -174,8 +174,8 @@ function isToday(date) {
   return formatDate(date) === formatDate(new Date())
 }
 
-const weekDates     = computed(() => getWeekDates(weekOffset.value))
-const activePeople  = computed(() => data.activePersons())
+const weekDates      = computed(() => getWeekDates(weekOffset.value))
+const activePeople   = computed(() => data.activePersons())
 const favoritePeople = computed(() => activePeople.value.filter(p => favorites.value.includes(p)))
 const otherPeople    = computed(() => activePeople.value.filter(p => !favorites.value.includes(p)))
 </script>

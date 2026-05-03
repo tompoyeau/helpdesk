@@ -18,6 +18,7 @@
       <div class="cal-wrap">
         <!-- En-têtes jours -->
         <div class="cal-grid cal-head">
+          <span class="cal-wn-head">S</span>
           <span v-for="d in DAY_HEADERS" :key="d">{{ d }}</span>
         </div>
 
@@ -32,6 +33,7 @@
           }"
           @click="pickWeek(week)"
         >
+          <div class="cal-wn">{{ isoWeekNumber(week[0]) }}</div>
           <div
             v-for="day in week"
             :key="day ? day.toISOString() : wi + '-empty'"
@@ -105,8 +107,20 @@
 
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: 22px repeat(6, 1fr);
   gap: 2px;
+}
+.cal-wn-head {
+  text-align: center;
+  font-size: 0.5625rem; font-weight: 700;
+  color: var(--text-subtle); text-transform: uppercase;
+  padding: 4px 0;
+}
+.cal-wn {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.5625rem; font-weight: 700;
+  color: var(--text-subtle);
+  padding: 6px 0;
 }
 
 .cal-head {
@@ -195,6 +209,15 @@ const calendarWeeks = computed(() => {
   }
   return weeks
 })
+
+/* ── Numéro de semaine ISO ── */
+function isoWeekNumber(date) {
+  const d = new Date(date)
+  d.setHours(12, 0, 0, 0)
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7))
+  const yearStart = new Date(d.getFullYear(), 0, 1)
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7)
+}
 
 /* ── Utilitaires ── */
 function mondayOf(offset) {

@@ -4,13 +4,22 @@
     <!-- ── En-tête personne ── -->
     <div class="person-header">
       <div class="person-avatar-lg">{{ initials }}</div>
-      <div>
+      <div style="flex:1;min-width:0">
         <h2 style="margin-bottom:2px">{{ personName }}</h2>
         <span class="person-period">
           {{ fmtJ(stats.workDays) }} jours
           {{ firstDay ? '· ' + formatFR(firstDay) + ' → ' + formatFR(lastDay) : '' }}
         </span>
       </div>
+      <a
+        v-if="userStore.isAdmin && personEmail"
+        :href="`mailto:${personEmail}`"
+        class="btn-email"
+        :title="`Envoyer un mail à ${personEmail}`"
+      >
+        <Mail :size="13" />
+        Envoyer un mail
+      </a>
     </div>
 
     <!-- ── KPI cards ── -->
@@ -228,11 +237,22 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
+import { useUserStore } from '@/stores/userStore'
+import { Mail } from 'lucide-vue-next'
 import DayModal from '@/components/planning/DayModal.vue'
 
-const props  = defineProps({ personName: { type: String, required: true } })
-const data   = useDataStore()
-const router = useRouter()
+const props     = defineProps({ personName: { type: String, required: true } })
+const data      = useDataStore()
+const userStore = useUserStore()
+const router    = useRouter()
+
+// Email du collaborateur (depuis la collection personnes)
+const personEmail = computed(() => {
+  const entry = Object.values(data.personnesData).find(
+    p => `${p.nom} ${p.prenom}` === props.personName
+  )
+  return entry?.email || ''
+})
 
 // Laisse le navigateur peindre le skeleton avant de lancer les computed lourds
 const ready = ref(false)
@@ -441,3 +461,17 @@ const visibleDays = computed(() => {
 
 function openModal(day) { modalDate.value = day; modalOpen.value = true }
 </script>
+
+<style scoped>
+.btn-email {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--radius-md);
+  font-size: 0.8125rem; font-weight: 600;
+  background: var(--accent); color: #fff;
+  border: none; cursor: pointer; text-decoration: none;
+  white-space: nowrap; flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-email:hover  { background: var(--accent-hover); }
+.btn-email:active { transform: scale(0.97); }
+</style>
