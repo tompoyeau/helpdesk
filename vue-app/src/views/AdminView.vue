@@ -52,6 +52,11 @@
             <AdminPlanning />
           </div>
 
+          <!-- Onglet Forecast -->
+          <div v-else-if="tab === 'forecast'">
+            <AdminForecast />
+          </div>
+
         </div>
       </div>
     </template>
@@ -91,17 +96,19 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { Shield, ShieldOff, Users, CalendarDays } from 'lucide-vue-next'
+import { Shield, ShieldOff, Users, CalendarDays, TrendingUp } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
 import AdminCollaborateurs from '@/components/admin/AdminCollaborateurs.vue'
 import AdminPlanning       from '@/components/admin/AdminPlanning.vue'
+import AdminForecast       from '@/components/admin/AdminForecast.vue'
 
 const userStore = useUserStore()
 
 const tab = ref('collab')
 const tabs = [
-  { key: 'collab',   label: 'Collaborateurs', icon: Users        },
-  { key: 'planning', label: 'Planning',       icon: CalendarDays },
+  { key: 'collab',    label: 'Collaborateurs', icon: Users        },
+  { key: 'planning',  label: 'Planning',       icon: CalendarDays },
+  { key: 'forecast',  label: 'Forecast',       icon: TrendingUp   },
 ]
 
 // Charge la liste dès que isAdmin devient true (y compris au refresh,

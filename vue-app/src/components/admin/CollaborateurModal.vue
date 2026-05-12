@@ -57,12 +57,39 @@
           </div>
         </div>
 
-        <div class="form-group toggle-row">
-          <label class="toggle-label flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" v-model="form.isAdmin" class="toggle-input">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span class="toggle-text">Administrateur</span>
-          </label>
+        <div class="form-row">
+          <div class="form-group toggle-row">
+            <label class="toggle-label flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="form.onRun" class="toggle-input">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-text">Planning Run</span>
+            </label>
+            <span style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px">Inclure dans le forecast / planning automatique</span>
+          </div>
+          <div class="form-group toggle-row">
+            <label class="toggle-label flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="form.isAdmin" class="toggle-input">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-text">Administrateur</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group toggle-row">
+            <label class="toggle-label flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="form.peutTLT" class="toggle-input">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-text">Peut faire du TLT</span>
+            </label>
+          </div>
+          <div class="form-group toggle-row">
+            <label class="toggle-label flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="form.peutBO" class="toggle-input">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-text">Peut faire du BO</span>
+            </label>
+          </div>
         </div>
 
         <div v-if="errorMsg" class="form-error">{{ errorMsg }}</div>
@@ -183,9 +210,11 @@ const form = ref({
   arriveeInput: admin.firestoreToInput(props.person?.arrivee ?? ''),
   departInput:  admin.firestoreToInput(props.person?.depart  ?? ''),
   isAdmin:     props.person?.isAdmin     ?? false,
+  onRun:       props.person?.onRun       ?? true,
+  peutTLT:     props.person?.peutTLT     ?? true,
+  peutBO:      props.person?.peutBO      ?? false,
 })
 
-// Valeurs initiales pour détecter les modifications (mode édition uniquement)
 const initial = {
   nom:         props.person?.nom         ?? '',
   prenom:      props.person?.prenom      ?? '',
@@ -195,20 +224,26 @@ const initial = {
   arriveeInput: admin.firestoreToInput(props.person?.arrivee ?? ''),
   departInput:  admin.firestoreToInput(props.person?.depart  ?? ''),
   isAdmin:     props.person?.isAdmin     ?? false,
+  onRun:       props.person?.onRun       ?? true,
+  peutTLT:     props.person?.peutTLT     ?? true,
+  peutBO:      props.person?.peutBO      ?? false,
 }
 
 const isDirty = computed(() => {
-  if (!isEdit.value) return true // création : toujours actif
+  if (!isEdit.value) return true
   const f = form.value
   return (
-    f.nom         !== initial.nom         ||
-    f.prenom      !== initial.prenom      ||
-    f.email       !== initial.email       ||
-    f.niveau      !== initial.niveau      ||
-    f.role        !== initial.role        ||
+    f.nom          !== initial.nom          ||
+    f.prenom       !== initial.prenom       ||
+    f.email        !== initial.email        ||
+    f.niveau       !== initial.niveau       ||
+    f.role         !== initial.role         ||
     f.arriveeInput !== initial.arriveeInput ||
     f.departInput  !== initial.departInput  ||
-    f.isAdmin     !== initial.isAdmin
+    f.isAdmin      !== initial.isAdmin      ||
+    f.onRun        !== initial.onRun        ||
+    f.peutTLT      !== initial.peutTLT      ||
+    f.peutBO       !== initial.peutBO
   )
 })
 
@@ -225,6 +260,9 @@ async function submit() {
       arrivee: admin.inputToFirestore(form.value.arriveeInput),
       depart:  admin.inputToFirestore(form.value.departInput),
       isAdmin: form.value.isAdmin,
+      onRun:   form.value.onRun,
+      peutTLT: form.value.peutTLT,
+      peutBO:  form.value.peutBO,
     }
     if (isEdit.value) {
       await admin.updatePersonne(props.person.uid, data)

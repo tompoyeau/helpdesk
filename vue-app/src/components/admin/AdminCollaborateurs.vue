@@ -53,7 +53,16 @@
                 >
                   {{ `${u.nom?.[0] ?? ''}${u.prenom?.[0] ?? ''}`.toUpperCase() }}
                 </div>
-                <span class="collab-name">{{ u.nom }} {{ u.prenom }}</span>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span class="collab-name">{{ u.nom }} {{ u.prenom }}</span>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <span class="badge-run" :class="u.onRun === false ? 'badge-hors-run' : 'badge-on-run'">
+                      {{ u.onRun === false ? 'Hors Run' : 'Run' }}
+                    </span>
+                    <span v-if="u.peutTLT !== false" class="badge-cap badge-tlt">TLT</span>
+                    <span v-if="u.peutBO" class="badge-cap badge-bo">BO</span>
+                  </div>
+                </div>
               </div>
             </td>
 
@@ -145,6 +154,23 @@
   background: linear-gradient(135deg, var(--accent) 0%, #8B5CF6 100%) !important;
   color: #fff !important;
 }
+
+/* Badge Run / Hors Run */
+.badge-run {
+  display: inline-block;
+  font-size: 0.5625rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 1px 5px; border-radius: 4px; text-transform: uppercase;
+}
+.badge-on-run   { background: rgba(34,197,94,0.12); color: #22c55e; }
+.badge-hors-run { background: rgba(176,176,176,0.15); color: var(--text-muted); }
+
+.badge-cap {
+  display: inline-block;
+  font-size: 0.5625rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 1px 5px; border-radius: 4px; text-transform: uppercase;
+}
+.badge-tlt { background: rgba(215,190,158,0.2);  color: rgba(201,167,123,1); }
+.badge-bo  { background: rgba(253,224,71,0.2);   color: rgba(180,155,20,1);  }
 
 /* Badge niveau */
 .badge-niveau {
