@@ -288,6 +288,9 @@ const TLT_CATS  = new Set(['TLT Matin','TLT Midi','TLT APREM','TLT Soir','TLT Ag
 const CLI_CATS  = new Set(['Matin','Midi','Aprem','Soir','Formation','PiloteBO'])
 const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, 'Agence Matin','Agence Midi','Agence APREM','Agence Soir','Pilote','MatinW11','SoirW11','Astreinte'])
 
+// Convertit des slots (créneaux 15 min) en fraction de journée : ≥23 = 1j, sinon 0.5j
+function slotsToDay(slots) { return slots >= 23 ? 1 : slots > 0 ? 0.5 : 0 }
+
 const stats = computed(() => {
   if (!d.value) return { workDays: 0, tltDays: 0, clientDays: 0, cpDays: 0, tauxTlt: 0, tauxClient: 0 }
   let workDays = 0, tltDays = 0, clientDays = 0, cpDays = 0
@@ -297,11 +300,12 @@ const stats = computed(() => {
     const workCount   = entries.filter(e => WORK_CATS.has(e.categorie)).length
     const tltCount    = entries.filter(e => TLT_CATS.has(e.categorie)).length
     const clientCount = entries.filter(e => CLI_CATS.has(e.categorie)).length
-    const cpCount     = entries.filter(e => e.categorie === 'CP').length
+    // CP : basé sur les slots réels pour distinguer journée complète / demi-journée
+    const cpSlots     = entries.filter(e => e.categorie === 'CP').reduce((s, e) => s + (e.slots || 0), 0)
     workDays   += toDay(workCount)
     tltDays    += toDay(tltCount)
     clientDays += toDay(clientCount)
-    if (cpCount > 0 && new Date(day + 'T12:00:00').getDay() !== 6) cpDays += 1
+    if (cpSlots > 0 && new Date(day + 'T12:00:00').getDay() !== 6) cpDays += slotsToDay(cpSlots)
   }
   const tauxTlt    = workDays > 0 ? Math.round(tltDays    / workDays * 100) : 0
   const tauxClient = workDays > 0 ? Math.round(clientDays / workDays * 100) : 0
@@ -320,10 +324,19 @@ const byCatRows = computed(() => {
   if (!d.value) return []
   const byCat = {}
   for (const day in d.value.details) {
-    const catCounts = {}
-    d.value.details[day].forEach(e => { catCounts[e.categorie] = (catCounts[e.categorie] || 0) + 1 })
-    for (const [cat, count] of Object.entries(catCounts)) {
-      const val = FULL_DAY_CATS.has(cat) ? 1 : (count === 1 ? 0.5 : 1)
+    // Agrège count et slots par catégorie pour ce jour
+    const catData = {}
+    d.value.details[day].forEach(e => {
+      if (!catData[e.categorie]) catData[e.categorie] = { count: 0, slots: 0 }
+      catData[e.categorie].count++
+      catData[e.categorie].slots += e.slots || 0
+    })
+    for (const [cat, { count, slots }] of Object.entries(catData)) {
+      // CP / Indisponible / Récup : on se base sur les slots réels
+      // pour distinguer journée complète (≥23 créneaux) et demi-journée
+      const val = FULL_DAY_CATS.has(cat)
+        ? slotsToDay(slots)
+        : (count === 1 ? 0.5 : 1)
       byCat[cat] = (byCat[cat] || 0) + val
     }
   }

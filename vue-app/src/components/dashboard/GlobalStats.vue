@@ -205,21 +205,31 @@ const periode = computed(() => {
   return `${fmt(fs)} → ${fmt(fe)}`
 })
 
-/* ── Stats par collaborateur (pré-calculées) ── */
+/* ── Helpers partagés avec PersonDetail ── */
+// ≥23 créneaux sur 45 = journée complète, sinon demi-journée
+const slotsToDay = slots => slots >= 23 ? 1 : slots > 0 ? 0.5 : 0
+// 1 bloc d'activité = 0.5j, 2+ blocs = 1j
+const toDay = c => c === 1 ? 0.5 : c >= 2 ? 1 : 0
+
+/* ── Stats par collaborateur (même logique que PersonDetail) ── */
 function getPersonStat(person, type) {
   const d = data.filtered?.byPerson[person]
   if (!d) return 0
-  let slots = 0
+  let total = 0
   for (const day in d.details) {
-    d.details[day].forEach(e => {
-      if (type === 'work'   && WORK_CATS.has(e.categorie)) slots += e.slots
-      if (type === 'tlt'    && TLT_CATS.has(e.categorie))  slots += e.slots
-      if (type === 'client' && CLI_CATS.has(e.categorie))  slots += e.slots
-      if (type === 'cp'     && CP_CATS.has(e.categorie))   slots += e.slots
-    })
+    const entries = d.details[day]
+    if (type === 'cp') {
+      // CP : basé sur les slots réels pour distinguer journée complète / demi-journée
+      const cpSlots = entries
+        .filter(e => e.categorie === 'CP')
+        .reduce((s, e) => s + (e.slots || 0), 0)
+      total += slotsToDay(cpSlots)
+    } else {
+      const CATS = type === 'work' ? WORK_CATS : type === 'tlt' ? TLT_CATS : CLI_CATS
+      total += toDay(entries.filter(e => CATS.has(e.categorie)).length)
+    }
   }
-  const days = slots / 30
-  return Number.isInteger(days) ? days : +days.toFixed(1)
+  return Number.isInteger(total) ? total : +total.toFixed(1)
 }
 
 /* ── Liste triée ── */
