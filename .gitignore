@@ -135,3 +135,5 @@ planning.json
 
 Claude Setup.exe
 planning.enc.json
+# Données prod exportées pour l emulateur Firebase
+emulator-seed/

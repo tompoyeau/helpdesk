@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
-import { getAuth } from 'firebase/auth'
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore'
+import { getAuth, connectAuthEmulator } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,6 +11,13 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-const app = initializeApp(firebaseConfig)
+const app  = initializeApp(firebaseConfig)
 export const db   = getFirestore(app)
 export const auth = getAuth(app)
+
+// Émulateur local — activé via `npm run dev:test`
+if (import.meta.env.VITE_USE_EMULATOR === 'true') {
+  connectFirestoreEmulator(db,   'localhost', 8080)
+  connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true })
+  console.info('[Firebase] Mode émulateur actif')
+}
