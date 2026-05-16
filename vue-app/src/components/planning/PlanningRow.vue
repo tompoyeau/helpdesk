@@ -145,12 +145,12 @@ function cellClass(date) {
 }
 
 function cellStyle(date) {
-  if (hoursFor(date)) return { style: 'cursor:pointer' }
+  if (hoursFor(date) || absenceFor(date)) return { style: 'cursor:pointer' }
   return {}
 }
 
 function handleClick(date) {
-  if (hoursFor(date)) emit('open-modal', props.person, formatDate(date))
+  if (hoursFor(date) || absenceFor(date)) emit('open-modal', props.person, formatDate(date))
 }
 
 const initials = props.person.split(' ').map(n => n[0]).join('')

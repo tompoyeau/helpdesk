@@ -112,7 +112,6 @@ export const SHIFT_COLORS = {
   'CP':           { bg: 'rgba(68,0,255,0.12)',     text: 'rgba(68,0,255,1)'    },
   'Indisponible': { bg: 'rgba(176,176,176,0.18)',  text: 'rgba(176,176,176,1)' },
   'Récup':        { bg: 'rgba(230,172,216,0.2)',   text: 'rgba(230,172,216,1)' },
-  'Maladie':      { bg: 'rgba(238,138,138,0.2)',   text: 'rgba(238,138,138,1)' },
   'Formation':    { bg: 'rgba(254,228,191,0.25)',  text: 'rgba(254,228,191,1)' },
   '':             { bg: 'transparent',             text: 'var(--text-subtle)'  },
 }
@@ -194,7 +193,7 @@ export function analyzeHistory(planningData) {
    ASSIGNATION HEBDOMADAIRE ÉQUITABLE
    ============================================================ */
 
-const ABSENCE_CATS = new Set(['CP', 'Indisponible', 'Récup', 'Maladie', 'Formation'])
+const ABSENCE_CATS = new Set(['CP', 'Indisponible', 'Récup', 'Formation'])
 
 function getAbsenceForDay(planningData, personName, iso) {
   const entries = planningData?.[personName]?.[iso]

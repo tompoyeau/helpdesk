@@ -319,6 +319,12 @@
 }
 </style>
 
+<script>
+import { ref } from 'vue'
+// Variable de module : persiste entre les changements d'onglets, réinitialisée au refresh
+const weekOffset = ref(0)
+</script>
+
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import {
@@ -353,9 +359,7 @@ async function toggleTestCollection() {
   }
 }
 
-/* ── Semaine ── */
-const weekOffset = ref(parseInt(localStorage.getItem('admin_planning_week_offset') || '0', 10))
-watch(weekOffset, val => localStorage.setItem('admin_planning_week_offset', String(val)))
+/* ── Semaine (weekOffset défini en module-scope, au-dessus) ── */
 
 function getMondayOf(offset) {
   const today = new Date()
@@ -566,19 +570,29 @@ const HORAIRE_RANK = {
   '21': 11,  // TLT Midi
   '13': 12,  // TLT Agence Midi
   '10': 13,  // Agence Midi
-  // Aprem
+  // Aprem + Formation (même niveau)
   '15': 20,  // Aprem client
   '22': 21,  // TLT Aprem
   '17': 22,  // TLT Agence Aprem
   '16': 23,  // Agence Aprem
+  '27': 24,  // ApremRenf
+  '5':  25,  // Formation
   // Soir
   '2':  30,  // Soir client
   '23': 31,  // TLT Soir
   '14': 32,  // TLT Agence Soir
   '11': 33,  // Agence Soir
   '29': 34,  // Soir W11
-  // PiloteBO (après tous les créneaux)
+  // PiloteBO (après Soir)
   '26': 40,
+  // Pilotage (juste avant CP/Indisponible)
+  '24': 80,
+  // CP / Indisponible (en dernier)
+  '8':  85,  // Récup
+  '7':  86,  // Astreinte
+  '31': 87,  // RH
+  '30': 90,  // CP
+  '6':  91,  // Indisponible
 }
 
 function horaireRank(activites) {

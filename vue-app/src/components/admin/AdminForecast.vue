@@ -159,12 +159,16 @@
           <div class="matrix-wrap">
             <div class="legend">
               <span v-for="(c, name) in SHIFT_COLORS" :key="name" v-show="name !== ''"
-                class="legend-item" :style="{ background: c.bg, color: c.text }">
+                class="legend-item" :style="{ background: c.bg, color: c.text }" :title="name">
                 {{ SHIFT_SHORT[name] || name }}
               </span>
             </div>
             <div class="matrix-scroll">
-              <table class="matrix-table">
+              <table class="matrix-table" :style="viewMode === 'week' ? { width: '100%' } : { width: matrixTableWidth + 'px' }">
+                <colgroup>
+                  <col style="width:160px;min-width:160px;max-width:160px">
+                  <col v-for="iso in visibleDates" :key="iso" :style="viewMode === 'week' ? { minWidth: '42px' } : { width: '42px', minWidth: '42px', maxWidth: '42px' }">
+                </colgroup>
                 <thead>
                   <tr>
                     <th class="th-name">Collaborateur</th>
@@ -495,7 +499,7 @@
 /* ── Matrice ── */
 .matrix-wrap { min-width: 0; }
 .matrix-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); max-height: 65vh; }
-.matrix-table { border-collapse: collapse; font-size: 0.6875rem; }
+.matrix-table { border-collapse: collapse; font-size: 0.6875rem; table-layout: fixed; }
 .matrix-table th, .matrix-table td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
 .matrix-table tr:last-child td { border-bottom: none; }
 
@@ -504,14 +508,15 @@
   background: var(--bg-surface); padding: 6px 10px;
   font-weight: 700; text-align: left; white-space: nowrap;
   border-right: 2px solid var(--border) !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
   font-size: 0.6875rem; color: var(--text-muted); width: 160px;
-  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
 }
 .th-day {
   position: sticky; top: 0; z-index: 2;
   background: var(--bg-surface); padding: 4px 2px; text-align: center;
-  width: 42px;
-  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  width: 42px; max-width: 42px; overflow: hidden;
+  border-bottom: none !important;
 }
 .th-lundi { border-left: 2px solid var(--border) !important; }
 .th-day-inner { display: flex; flex-direction: column; align-items: center; gap: 1px; }
@@ -527,14 +532,14 @@
   border-right: 2px solid var(--border) !important;
   border-bottom: 1px solid var(--border);
   font-size: 0.5rem; color: var(--text-muted); letter-spacing: 0.05em;
-  border-top-left-radius: 0; border-top-right-radius: 0;
+  border-radius: 0 !important;
 }
 .th-etp {
   position: sticky; top: 30px; z-index: 1;
   text-align: center; padding: 2px 1px; width: 42px;
   border-bottom: 1px solid var(--border);
   transition: background 0.2s;
-  border-top-left-radius: 0; border-top-right-radius: 0;
+  border-radius: 0 !important;
 }
 .etp-num  { font-size: 0.625rem; font-weight: 800; line-height: 1.2; }
 .etp-sub  { font-size: 0.5rem;   font-weight: 700; line-height: 1.2; opacity: 0.9; }
@@ -546,7 +551,10 @@
   font-weight: 600; white-space: nowrap;
   border-right: 2px solid var(--border) !important; width: 160px;
 }
-.td-cell { text-align: center; padding: 4px 2px; font-weight: 700; cursor: pointer; transition: filter 0.1s; font-size: 0.625rem; width: 42px; }
+.td-cell { text-align: center; padding: 4px 2px; font-weight: 700; cursor: pointer; transition: filter 0.1s; font-size: 0.625rem; width: 42px; max-width: 42px; overflow: hidden; }
+/* Override règle globale .content-card tbody td:last-child qui force text-align:right */
+.matrix-table td:last-child,
+.matrix-table th:last-child { text-align: center; font-family: inherit; font-size: 0.625rem; color: inherit; font-weight: 700; padding: 4px 2px; }
 .td-cell:hover { filter: brightness(1.25); }
 .td-lundi   { border-left: 2px solid var(--border) !important; }
 .td-editing { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; position: relative; }
@@ -761,7 +769,7 @@ const SHIFT_SHORT = {
   'Agence Matin': 'AM',  'Agence Midi':'AMi', 'Agence APREM':'AA','Agence Soir':'AS',
   'BO':           'BO',
   'CP':           'CP',  'Indisponible': 'Ind', 'Récup':    'Réc',
-  'Maladie':      'Mal', 'Formation': 'For',
+  'Formation': 'For',
   '':             '—',
 }
 
