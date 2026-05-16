@@ -9,8 +9,9 @@ import { TIME_SLOTS } from '@/stores/dataStore'
 export { TIME_SLOTS }
 
 export const useAdminStore = defineStore('admin', () => {
-  const saving = ref(false)
-  const error  = ref(null)
+  const saving         = ref(false)
+  const error          = ref(null)
+  const collectionName = ref('plannings')   // 'plannings' | 'plannings_test'
 
   /* ── Génération d'IDs ── */
   function generatePersonneId() {
@@ -58,7 +59,7 @@ export const useAdminStore = defineStore('admin', () => {
   /* ── Planning ── */
   async function loadDayPlanning(date) {
     const id   = dateToId(date)
-    const snap = await getDoc(doc(db, 'plannings', id))
+    const snap = await getDoc(doc(db, collectionName.value, id))
     if (!snap.exists()) return { id, exists: false, filled: false, ressources: [] }
 
     const ressources = snap.data().ressources || []
@@ -71,7 +72,7 @@ export const useAdminStore = defineStore('admin', () => {
     saving.value = true
     error.value  = null
     try {
-      await setDoc(doc(db, 'plannings', dateToId(date)), { ressources })
+      await setDoc(doc(db, collectionName.value, dateToId(date)), { ressources })
     } catch (e) {
       error.value = e.message
       throw e
@@ -124,7 +125,7 @@ export const useAdminStore = defineStore('admin', () => {
   }
 
   return {
-    saving, error,
+    saving, error, collectionName,
     TIME_SLOTS,
     generatePersonneId, dateToId,
     inputToFirestore, firestoreToInput,

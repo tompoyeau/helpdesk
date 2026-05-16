@@ -1,6 +1,1 @@
-{
-  "scripts": {
-    "emulator": "firebase emulators:start --import=./emulator-seed --project planning-helpdesk",
-    "emulator:seed": "firebase firestore:export ./emulator-seed --project planning-helpdesk"
-  }
-}
+{}

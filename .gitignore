@@ -137,3 +137,6 @@ Claude Setup.exe
 planning.enc.json
 # Données prod exportées pour l emulateur Firebase
 emulator-seed/
+
+# Clé de service Firebase (ne jamais committer)
+scripts/service-account.json

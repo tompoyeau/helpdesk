@@ -55,7 +55,7 @@
           </div>
         </div>
         <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:8px">
-          Équitable · même horaire/semaine · TLT max 2j/mois · pas de TLT le mercredi
+          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi
         </span>
         <button class="btn-preview" style="margin-left:auto" :disabled="fc.previewing || dataLoading" @click="doPreview">
           <div v-if="fc.previewing" class="btn-spinner"></div>
@@ -88,10 +88,20 @@
               <span class="toggle-track"></span>
               <span class="opt-label" style="margin-left:6px">Écraser existants</span>
             </label>
-            <button class="btn-apply" :disabled="fc.generating" @click="doApply">
+            <label class="toggle">
+              <input type="checkbox" v-model="testMode" />
+              <span class="toggle-track toggle-track-test"></span>
+              <span class="opt-label" style="margin-left:6px">Mode test</span>
+            </label>
+            <button
+              class="btn-apply"
+              :class="{ 'btn-apply-test': testMode }"
+              :disabled="fc.generating"
+              @click="doApply"
+            >
               <div v-if="fc.generating" class="btn-spinner"></div>
               <Wand2 v-else :size="14" />
-              <span>{{ fc.generating ? `Application… (${genProgress}/${genTotal})` : 'Appliquer' }}</span>
+              <span>{{ fc.generating ? `Application… (${genProgress}/${genTotal})` : (testMode ? 'Appliquer (test)' : 'Appliquer') }}</span>
             </button>
           </div>
         </div>
@@ -112,10 +122,23 @@
 
         <!-- Résultat après application -->
         <div v-if="fc.genResults" class="gen-result">
-          <div class="gen-stat" style="color:#22c55e"><CheckCircle2 :size="13" />{{ fc.genResults.done }} créés</div>
+          <!-- Badge collection cible -->
+          <span
+            class="gen-collection-badge"
+            :class="{ 'gen-collection-test': fc.genResults.collection !== 'plannings' }"
+          >{{ fc.genResults.collection }}</span>
+
+          <div class="gen-stat" style="color:#22c55e"><CheckCircle2 :size="13" />{{ fc.genResults.done }} écrits</div>
           <div class="gen-stat" style="color:var(--text-muted)"><SkipForward :size="13" />{{ fc.genResults.skipped }} ignorés</div>
           <div v-if="fc.genResults.errors" class="gen-stat" style="color:#f87171"><AlertTriangle :size="13" />{{ fc.genResults.errors }} erreurs</div>
           <span style="color:var(--text-subtle);font-size:0.6875rem">sur {{ fc.genResults.total }} jours</span>
+
+          <!-- Rappel navigation si données en avril (pas le mois courant) -->
+          <span
+            v-if="resultMonthLabel"
+            class="gen-nav-hint"
+          >↳ Naviguer en {{ resultMonthLabel }} dans la vue planning pour vérifier</span>
+
           <button
             v-if="fc.appliedDayIds.length"
             class="btn-undo"
@@ -157,6 +180,27 @@
                       </div>
                     </th>
                   </tr>
+
+                  <!-- ── Ligne ETP / Risque ── -->
+                  <tr>
+                    <th class="th-etp-label">ETP</th>
+                    <th
+                      v-for="iso in visibleDates"
+                      :key="iso"
+                      class="th-etp"
+                      :class="{ 'td-lundi': viewMode === 'month' && weekStarts.has(iso) }"
+                      :style="etpCellStyle(iso)"
+                      :title="etpTitle(iso)"
+                    >
+                      <template v-if="etpStats[iso]">
+                        <div class="etp-num">{{ etpStats[iso].actual }}</div>
+                        <div class="etp-sub">
+                          {{ etpStats[iso].diff === 0 ? '✓' : (etpStats[iso].diff > 0 ? '+' + etpStats[iso].diff : etpStats[iso].diff) }}
+                        </div>
+                      </template>
+                      <span v-else class="etp-na">—</span>
+                    </th>
+                  </tr>
                 </thead>
                 <tbody>
                   <tr v-for="person in fc.preview.persons" :key="person">
@@ -165,9 +209,14 @@
                       v-for="iso in visibleDates"
                       :key="iso"
                       class="td-cell"
-                      :class="{ 'td-lundi': viewMode === 'month' && weekStarts.has(iso) }"
+                      :class="{
+                        'td-lundi':   viewMode === 'month' && weekStarts.has(iso),
+                        'td-edited':  isEdited(person, iso),
+                        'td-editing': editCell?.person === person && editCell?.iso === iso,
+                      }"
                       :style="cellStyle(fc.preview.matrix[person]?.[iso])"
-                      :title="fc.preview.matrix[person]?.[iso] || 'Non affecté'"
+                      :title="(fc.preview.matrix[person]?.[iso] || 'Non affecté') + ' · Cliquer pour modifier'"
+                      @click.stop="openEdit(person, iso, $event)"
                     >
                       {{ SHIFT_SHORT[fc.preview.matrix[person]?.[iso] || ''] ?? '—' }}
                     </td>
@@ -224,6 +273,59 @@
         </div>
       </template>
     </template>
+
+  <!-- ── Popup édition cellule ── -->
+  <div
+    v-if="editCell"
+    class="cell-popup"
+    :style="popupStyle"
+    @click.stop
+  >
+    <div class="cell-popup-header">
+      <span>{{ editCell.person.split(' ')[0] }} · {{ fmtDM(editCell.iso) }}</span>
+      <button class="cell-popup-close" @click="closeEdit">×</button>
+    </div>
+
+    <div class="cell-popup-grid">
+      <button
+        v-for="s in POPUP_WORK_SHIFTS"
+        :key="s"
+        class="cell-popup-btn"
+        :class="{ 'cell-popup-active': currentEdit === s }"
+        :style="cellStyle(s)"
+        :title="s"
+        @click="applyEdit(s)"
+      >{{ SHIFT_SHORT[s] }}</button>
+      <button
+        class="cell-popup-btn cell-popup-span"
+        :class="{ 'cell-popup-active': currentEdit === 'BO' }"
+        :style="cellStyle('BO')"
+        @click="applyEdit('BO')"
+      >BO</button>
+    </div>
+
+    <div class="cell-popup-sep"></div>
+
+    <div class="cell-popup-grid">
+      <button
+        v-for="s in POPUP_ABSENCE_SHIFTS"
+        :key="s"
+        class="cell-popup-btn"
+        :class="{ 'cell-popup-active': currentEdit === s }"
+        :style="cellStyle(s)"
+        :title="s"
+        @click="applyEdit(s)"
+      >{{ SHIFT_SHORT[s] }}</button>
+    </div>
+
+    <div class="cell-popup-sep"></div>
+
+    <button
+      class="cell-popup-empty"
+      :class="{ 'cell-popup-active': currentEdit === '' }"
+      @click="applyEdit('')"
+    >— Vide</button>
+  </div>
 
   </div>
 </template>
@@ -311,6 +413,10 @@
 }
 .btn-apply:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-apply:not(:disabled):hover { opacity: 0.85; }
+.btn-apply-test { background: #f59e0b; }
+
+.toggle-track-test { background: #fcd34d !important; }
+.toggle input:checked + .toggle-track-test { background: #f59e0b !important; }
 
 /* ── Sélecteur vue mois/semaine ── */
 .view-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
@@ -347,6 +453,20 @@
   background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
 }
 .gen-stat { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 0.75rem; }
+.gen-collection-badge {
+  padding: 2px 8px; border-radius: 4px; font-size: 0.625rem; font-weight: 700;
+  background: rgba(99,102,241,0.12); color: #818cf8; border: 1px solid rgba(99,102,241,0.25);
+  white-space: nowrap; flex-shrink: 0;
+}
+.gen-collection-test {
+  background: rgba(245,158,11,0.12) !important;
+  color: #f59e0b !important;
+  border-color: rgba(245,158,11,0.35) !important;
+}
+.gen-nav-hint {
+  font-size: 0.625rem; color: var(--text-muted); font-style: italic;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .btn-undo {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 12px; border-radius: var(--radius-sm);
@@ -385,11 +505,13 @@
   font-weight: 700; text-align: left; white-space: nowrap;
   border-right: 2px solid var(--border) !important;
   font-size: 0.6875rem; color: var(--text-muted); width: 160px;
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
 }
 .th-day {
   position: sticky; top: 0; z-index: 2;
   background: var(--bg-surface); padding: 4px 2px; text-align: center;
   width: 42px;
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
 }
 .th-lundi { border-left: 2px solid var(--border) !important; }
 .th-day-inner { display: flex; flex-direction: column; align-items: center; gap: 1px; }
@@ -397,15 +519,38 @@
 .th-dm  { font-size: 0.5625rem; font-weight: 600; color: var(--text-muted); }
 .dow-lun { color: #22c55e; } .dow-sam { color: var(--accent); }
 
+/* ── Ligne ETP ── */
+.th-etp-label {
+  position: sticky; left: 0; top: 30px; z-index: 3;
+  background: var(--bg-surface); padding: 3px 10px;
+  font-weight: 700; text-align: left; white-space: nowrap;
+  border-right: 2px solid var(--border) !important;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.5rem; color: var(--text-muted); letter-spacing: 0.05em;
+  border-top-left-radius: 0; border-top-right-radius: 0;
+}
+.th-etp {
+  position: sticky; top: 30px; z-index: 1;
+  text-align: center; padding: 2px 1px; width: 42px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.2s;
+  border-top-left-radius: 0; border-top-right-radius: 0;
+}
+.etp-num  { font-size: 0.625rem; font-weight: 800; line-height: 1.2; }
+.etp-sub  { font-size: 0.5rem;   font-weight: 700; line-height: 1.2; opacity: 0.9; }
+.etp-na   { font-size: 0.5rem; color: var(--text-subtle); }
+
 .td-name {
   position: sticky; left: 0; z-index: 1;
   background: var(--bg-card); padding: 5px 10px;
   font-weight: 600; white-space: nowrap;
   border-right: 2px solid var(--border) !important; width: 160px;
 }
-.td-cell { text-align: center; padding: 4px 2px; font-weight: 700; cursor: default; transition: filter 0.1s; font-size: 0.625rem; width: 42px; }
-.td-cell:hover { filter: brightness(1.2); }
-.td-lundi { border-left: 2px solid var(--border) !important; }
+.td-cell { text-align: center; padding: 4px 2px; font-weight: 700; cursor: pointer; transition: filter 0.1s; font-size: 0.625rem; width: 42px; }
+.td-cell:hover { filter: brightness(1.25); }
+.td-lundi   { border-left: 2px solid var(--border) !important; }
+.td-editing { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; position: relative; }
+.td-edited  { outline: 1px dashed var(--accent); outline-offset: -1px; }
 
 /* ── Panneau équité ── */
 .equity-panel {
@@ -437,10 +582,45 @@
 .equity-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .eq-legend-item { display: flex; align-items: center; gap: 3px; font-size: 0.5625rem; font-weight: 600; }
 .eq-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Popup édition cellule ── */
+.cell-popup {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+  padding: 10px; min-width: 200px;
+}
+.cell-popup-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px; font-size: 0.6875rem; font-weight: 700; color: var(--text-muted);
+}
+.cell-popup-close {
+  width: 18px; height: 18px; border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer; font-size: 1.1rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; padding: 0; transition: background 0.12s;
+}
+.cell-popup-close:hover { background: var(--bg-hover); color: var(--text); }
+.cell-popup-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.cell-popup-btn {
+  padding: 5px 2px; border-radius: 4px; border: 1px solid transparent;
+  font-size: 0.5625rem; font-weight: 800; cursor: pointer; text-align: center;
+  transition: filter 0.1s;
+}
+.cell-popup-btn:hover { filter: brightness(1.25); }
+.cell-popup-active { outline: 2px solid currentColor; outline-offset: 1px; }
+.cell-popup-span { grid-column: 1 / -1; }
+.cell-popup-sep { height: 1px; background: var(--border); margin: 7px 0; }
+.cell-popup-empty {
+  width: 100%; padding: 5px; border: 1px dashed var(--border); border-radius: 4px;
+  background: transparent; color: var(--text-muted); font-size: 0.625rem;
+  font-weight: 600; cursor: pointer; text-align: center; transition: background 0.12s;
+}
+.cell-popup-empty:hover { background: var(--bg-hover); }
+.cell-popup-empty.cell-popup-active { outline: 2px solid var(--border); outline-offset: 1px; }
 </style>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useForecastStore, SHIFT_COLORS } from '@/stores/forecastStore'
 import { useUserStore }                   from '@/stores/userStore'
 import { useDataStore }                   from '@/stores/dataStore'
@@ -457,12 +637,73 @@ const data      = useDataStore()
 const fileInput   = ref(null)
 const dragOver    = ref(false)
 const overwrite   = ref(false)
+const testMode    = ref(false)
 const genProgress  = ref(0)
 const genTotal     = ref(0)
 const undoProgress = ref(0)
 const undoTotal    = ref(0)
 const viewMode    = ref('month')  // 'month' | 'week'
 const weekIdx     = ref(0)
+
+/* ── Édition cellule à la volée ── */
+const editCell = ref(null)   // { person, iso, rectLeft, rectTop, rectBottom }
+
+// Shifts proposés dans le popup (ordre affiché)
+const POPUP_WORK_SHIFTS    = [
+  'Matin',        'Midi',        'Aprem',        'Soir',
+  'TLT Matin',    'TLT Midi',    'TLT APREM',    'TLT Soir',
+  'Agence Matin', 'Agence Midi', 'Agence APREM', 'Agence Soir',
+]
+const POPUP_ABSENCE_SHIFTS = ['CP','Indisponible','Récup','Formation']
+
+// Valeur actuelle de la cellule en cours d'édition
+const currentEdit = computed(() =>
+  editCell.value ? (fc.preview?.matrix[editCell.value.person]?.[editCell.value.iso] ?? '') : ''
+)
+
+// Cellules modifiées manuellement (pour indicateur visuel)
+const editedCells = ref(new Set())   // Set de clés "person|iso"
+
+function isEdited(person, iso) { return editedCells.value.has(`${person}|${iso}`) }
+
+// Positionnement fixe du popup, recalculé à l'ouverture (pas besoin d'être computed)
+const popupStyle = ref({})
+
+function openEdit(person, iso, event) {
+  const rect    = event.currentTarget.getBoundingClientRect()
+  editCell.value = { person, iso, rectLeft: rect.left, rectTop: rect.top, rectBottom: rect.bottom }
+  // Popup ~210px de large, ~220px de haut
+  const PW = 210, PH = 220
+  let x = rect.left
+  let y = rect.bottom + 4
+  if (x + PW > window.innerWidth  - 8) x = window.innerWidth  - PW - 8
+  if (y + PH > window.innerHeight - 8) y = rect.top - PH - 4
+  popupStyle.value = { position: 'fixed', left: x + 'px', top: y + 'px', zIndex: 9999 }
+}
+
+function applyEdit(shift) {
+  if (!editCell.value) return
+  const { person, iso } = editCell.value
+  fc.setMatrixCell(person, iso, shift)
+  editedCells.value = new Set([...editedCells.value, `${person}|${iso}`])
+  editCell.value = null
+}
+
+function closeEdit() { editCell.value = null }
+
+function handleOutsideClick(e) {
+  if (editCell.value && !e.target.closest('.cell-popup')) editCell.value = null
+}
+function handleKey(e) { if (e.key === 'Escape') editCell.value = null }
+
+onMounted(() => {
+  document.addEventListener('mousedown', handleOutsideClick)
+  document.addEventListener('keydown',   handleKey)
+})
+onUnmounted(() => {
+  document.removeEventListener('mousedown', handleOutsideClick)
+  document.removeEventListener('keydown',   handleKey)
+})
 
 const dataLoading = computed(() => data.loading)
 
@@ -480,7 +721,8 @@ function onDrop(e) {
 
 /* ── Preview ── */
 function doPreview() {
-  weekIdx.value = 0
+  weekIdx.value    = 0
+  editedCells.value = new Set()
   fc.previewPlanningWeekly({
     persons:     userStore.users,
     planningData: data.planning,
@@ -492,8 +734,9 @@ async function doApply() {
   genProgress.value = 0
   genTotal.value    = fc.preview?.dates.length || 0
   await fc.applyPreview({
-    persons:   userStore.users,
-    overwrite: overwrite.value,
+    persons:    userStore.users,
+    overwrite:  overwrite.value,
+    collection: testMode.value ? 'plannings_test' : 'plannings',
     onProgress: (n, total) => { genProgress.value = n; genTotal.value = total },
   })
 }
@@ -513,12 +756,13 @@ const JOURS_SHORT = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
 const SITE_NAME = { matin: 'Matin', midi: 'Midi', aprem: 'Aprem', soir: 'Soir' }
 
 const SHIFT_SHORT = {
-  'Matin':       'Mat', 'Midi':      'Mid', 'Aprem':     'Apr', 'Soir':      'Soi',
-  'TLT Matin':   'TM',  'TLT Midi':  'TMi', 'TLT APREM': 'TA',  'TLT Soir':  'TS',
-  'BO':          'BO',
-  'CP':          'CP',  'Indisponible': 'Ind', 'Récup':   'Réc',
-  'Maladie':     'Mal', 'Formation': 'For',
-  '':            '—',
+  'Matin':        'Mat', 'Midi':      'Mid',  'Aprem':     'Apr', 'Soir':      'Soi',
+  'TLT Matin':    'TM',  'TLT Midi':  'TMi',  'TLT APREM': 'TA',  'TLT Soir':  'TS',
+  'Agence Matin': 'AM',  'Agence Midi':'AMi', 'Agence APREM':'AA','Agence Soir':'AS',
+  'BO':           'BO',
+  'CP':           'CP',  'Indisponible': 'Ind', 'Récup':    'Réc',
+  'Maladie':      'Mal', 'Formation': 'For',
+  '':             '—',
 }
 
 
@@ -583,6 +827,18 @@ const monthLabel = computed(() => {
   return `${MONTHS_FR[d.getMonth()]} ${d.getFullYear()}`
 })
 
+// Indique le mois des données appliquées (pour le rappel de navigation dans la vue planning)
+const resultMonthLabel = computed(() => {
+  if (!fc.genResults || !fc.preview) return ''
+  const first = fc.preview.dates[0]
+  if (!first) return ''
+  const d = new Date(first + 'T12:00:00')
+  const now = new Date()
+  // Afficher le rappel seulement si ce n'est pas le mois courant
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return ''
+  return `${MONTHS_FR[d.getMonth()]} ${d.getFullYear()}`
+})
+
 function fmtDM(iso) {
   const d = new Date(iso + 'T12:00:00')
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`
@@ -591,6 +847,77 @@ function getDow(iso) { return JOURS_SHORT[new Date(iso + 'T12:00:00').getDay()] 
 function cellStyle(shift) {
   const c = SHIFT_COLORS[shift || ''] || SHIFT_COLORS['']
   return { background: c.bg, color: c.text }
+}
+
+/* ── ETP / Risque par jour ── */
+
+// Mapping shift → famille ETP pour le comptage
+const SHIFT_TO_FAMILY = {
+  'Matin':            'matin', 'TLT Matin':        'matin', 'Agence Matin':      'matin',
+  'TLT Agence Matin': 'matin', 'MatinW11':         'matin',
+  'Midi':             'midi',  'TLT Midi':          'midi',  'Agence Midi':       'midi',
+  'TLT Agence Midi':  'midi',
+  'Aprem':            'aprem', 'TLT APREM':         'aprem', 'Agence APREM':      'aprem',
+  'TLT Agence APREM': 'aprem', 'ApremRenf':         'aprem',
+  'Soir':             'soir',  'TLT Soir':          'soir',  'Agence Soir':       'soir',
+  'TLT Agence Soir':  'soir',  'SoirW11':           'soir',
+  'BO':               'bo',    'PiloteBO':          'bo',    'Pilote':            'bo',
+}
+
+// Réactif aux modifications à chaud : lit matrix[person][iso] pour chaque date
+const etpStats = computed(() => {
+  if (!fc.preview || !fc.forecast) return {}
+  const result = {}
+  for (const iso of fc.preview.dates) {
+    const fcDay = fc.forecast[iso]
+    if (!fcDay) { result[iso] = null; continue }
+
+    const actual = { matin: 0, midi: 0, aprem: 0, soir: 0, bo: 0 }
+    for (const person of fc.preview.persons) {
+      const fam = SHIFT_TO_FAMILY[fc.preview.matrix[person]?.[iso] || '']
+      if (fam) actual[fam]++
+    }
+
+    const expM = fcDay.matin || 0, expMi = fcDay.midi || 0
+    const expA = fcDay.aprem || 0, expS  = fcDay.soir || 0
+    const expTotal = expM + expMi + expA + expS         // = fcDay.etp
+    const actTotal = actual.matin + actual.midi + actual.aprem + actual.soir + actual.bo
+
+    result[iso] = {
+      actual:   actTotal,
+      expected: expTotal,
+      diff:     actTotal - expTotal,
+      byShift: {
+        matin: { actual: actual.matin, exp: expM  },
+        midi:  { actual: actual.midi,  exp: expMi },
+        aprem: { actual: actual.aprem, exp: expA  },
+        soir:  { actual: actual.soir,  exp: expS  },
+      },
+    }
+  }
+  return result
+})
+
+function etpCellStyle(iso) {
+  const s = etpStats.value[iso]
+  if (!s) return { background: 'var(--bg-surface)' }
+  if (s.diff >= 0) return { background: 'color-mix(in srgb, #22c55e 18%, var(--bg-surface))', color: '#22c55e' }
+  if (s.diff === -1) return { background: 'color-mix(in srgb, #f59e0b 22%, var(--bg-surface))', color: '#f59e0b' }
+  return { background: 'color-mix(in srgb, #ef4444 22%, var(--bg-surface))', color: '#ef4444' }
+}
+
+function etpTitle(iso) {
+  const s = etpStats.value[iso]
+  if (!s) return 'Aucune prévision'
+  const b = s.byShift
+  const sign = s.diff > 0 ? '+' : ''
+  return (
+    `ETP: ${s.actual} / ${s.expected} (${sign}${s.diff})\n` +
+    `Mat ${b.matin.actual}/${b.matin.exp}  ` +
+    `Mid ${b.midi.actual}/${b.midi.exp}  ` +
+    `Apr ${b.aprem.actual}/${b.aprem.exp}  ` +
+    `Soi ${b.soir.actual}/${b.soir.exp}`
+  )
 }
 
 /* ── Stats historiques ── */
