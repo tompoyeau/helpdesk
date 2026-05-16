@@ -20,6 +20,15 @@
           <CalendarCheck :size="12" />
           Aujourd'hui
         </button>
+        <button
+          class="btn-sort"
+          :class="{ 'btn-sort-active': sortByHoraire }"
+          style="margin-left:auto"
+          @click="sortByHoraire = !sortByHoraire"
+        >
+          <ArrowUpDown :size="12" />
+          {{ sortByHoraire ? 'Catégorie' : 'Alphabétique' }}
+        </button>
       </div>
     </div>
 
@@ -110,32 +119,45 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDataStore } from '@/stores/dataStore'
-import { ChevronLeft, ChevronRight, CalendarCheck, Star, Users } from 'lucide-vue-next'
+import { useAuthStore } from '@/stores/authStore'
+import { db } from '@/firebase/config'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { ChevronLeft, ChevronRight, CalendarCheck, Star, Users, ArrowUpDown } from 'lucide-vue-next'
 import PlanningRow from './PlanningRow.vue'
 import DayModal    from './DayModal.vue'
 import WeekPicker  from './WeekPicker.vue'
 
 const data = useDataStore()
+const auth = useAuthStore()
 
 const weekOffset  = ref(0)
 const modalOpen   = ref(false)
 const modalPerson = ref('')
 const modalDate   = ref('')
 
-const FAVORITES_KEY = 'planning_favorites'
-const favorites = ref(JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'))
+/* ── Favoris Firestore ── */
+const favorites = ref([])
 
-function saveFavorites() {
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites.value))
+onMounted(async () => {
+  const uid = auth.user?.uid
+  if (!uid) return
+  const snap = await getDoc(doc(db, 'personnes', uid))
+  if (snap.exists()) favorites.value = snap.data().planningFavorites || []
+})
+
+async function persistFavorites() {
+  const uid = auth.user?.uid
+  if (!uid) return
+  await setDoc(doc(db, 'personnes', uid), { planningFavorites: favorites.value }, { merge: true })
 }
 
 function toggleFavorite(person) {
   const idx = favorites.value.indexOf(person)
   if (idx > -1) favorites.value.splice(idx, 1)
   else favorites.value.push(person)
-  saveFavorites()
+  persistFavorites()
 }
 
 function openModal(person, dateStr) {
@@ -174,8 +196,52 @@ function isToday(date) {
   return formatDate(date) === formatDate(new Date())
 }
 
-const weekDates      = computed(() => getWeekDates(weekOffset.value))
-const activePeople   = computed(() => data.activePersons())
-const favoritePeople = computed(() => activePeople.value.filter(p => favorites.value.includes(p)))
-const otherPeople    = computed(() => activePeople.value.filter(p => !favorites.value.includes(p)))
+const weekDates    = computed(() => getWeekDates(weekOffset.value))
+const activePeople = computed(() => data.activePersons())
+
+/* ── Tri par catégorie d'horaire ── */
+const sortByHoraire = ref(false)
+
+const HORAIRE_RANK = {
+  'Matin': 0, 'TLT Matin': 1, 'TLT Agence Matin': 2, 'Agence Matin': 3, 'MatinW11': 4,
+  'Midi': 10, 'TLT Midi': 11, 'TLT Agence Midi': 12, 'Agence Midi': 13,
+  'Aprem': 20, 'TLT APREM': 21, 'TLT Agence APREM': 22, 'Agence APREM': 23, 'ApremRenf': 24,
+  'Soir': 30, 'TLT Soir': 31, 'TLT Agence Soir': 32, 'Agence Soir': 33, 'SoirW11': 34,
+  'PiloteBO': 40, 'BO': 40,
+}
+
+function horaireRank(person) {
+  const days = weekDates.value
+  for (const d of days) {
+    const iso     = formatDate(d)
+    const entries = data.planning?.[person]?.[iso]
+    if (!entries?.length) continue
+    const cat = entries.find(e => HORAIRE_RANK[e.categorie] !== undefined)?.categorie
+    if (cat !== undefined) return HORAIRE_RANK[cat] ?? 99
+  }
+  return 99
+}
+
+function sortedPeople(list) {
+  if (!sortByHoraire.value) return list
+  return [...list].sort((a, b) => {
+    const diff = horaireRank(a) - horaireRank(b)
+    return diff !== 0 ? diff : a.localeCompare(b, 'fr')
+  })
+}
+
+const favoritePeople = computed(() => sortedPeople(activePeople.value.filter(p =>  favorites.value.includes(p))))
+const otherPeople    = computed(() => sortedPeople(activePeople.value.filter(p => !favorites.value.includes(p))))
 </script>
+
+<style scoped>
+.btn-sort {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; font-size: 0.75rem; font-weight: 600;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-sort:hover    { background: var(--bg-hover); color: var(--text); }
+.btn-sort-active   { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+</style>

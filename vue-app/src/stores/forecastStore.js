@@ -24,17 +24,30 @@ export const ETP_TABLE = {
   10: { matin: 2, midi: 2, aprem: 3, soir: 3 },
 }
 
-// [startSlot, endSlot] — endSlot exclusif, slots 15min de 8h00 (0) à 19h00 (44)
+// [startSlot, endSlot] — endSlot exclusif, slots de 15 min depuis 8h00
+// slot = (heure*60 + minutes - 480) / 15
+// 8h00=0  8h30=2  8h45=3  9h00=4  9h15=5
+// 12h00=16 12h30=18 12h45=19 13h00=20 13h15=21 13h30=22
+// 16h30=34 17h00=36 17h30=38 18h00=40
 const SHIFT_PATTERNS = {
-  'Matin':     { code: '0',  blocks: [[0, 17], [22, 36]] },
-  'Midi':      { code: '1',  blocks: [[2, 18], [21, 36]] },
-  'Aprem':     { code: '15', blocks: [[4, 18], [22, 38]] },
-  'Soir':      { code: '2',  blocks: [[5, 21], [26, 40]] },
-  'TLT Matin': { code: '20', blocks: [[0, 17], [22, 36]] },
-  'TLT Midi':  { code: '21', blocks: [[2, 18], [21, 36]] },
-  'TLT APREM': { code: '22', blocks: [[4, 18], [22, 38]] },
-  'TLT Soir':  { code: '23', blocks: [[5, 21], [26, 40]] },
-  'BO':        { code: 'BO', blocks: [[4, 40]] },  // 9h00–18h00
+  'Matin':     { code: '0',  blocks: [[0, 16], [20, 34]] },  // 8h00-12h00 / 13h00-16h30
+  'Midi':      { code: '1',  blocks: [[2, 18], [22, 36]] },  // 8h30-12h30 / 13h30-17h00
+  'Aprem':     { code: '15', blocks: [[4, 18], [22, 38]] },  // 9h00-12h30 / 13h30-17h30
+  'Soir':      { code: '2',  blocks: [[5, 21], [26, 40]] },  // 9h15-13h15 / 14h30-18h00
+  'TLT Matin':    { code: '20', blocks: [[0, 16], [20, 34]] },
+  'TLT Midi':     { code: '21', blocks: [[2, 18], [22, 36]] },
+  'TLT APREM':    { code: '22', blocks: [[4, 18], [22, 38]] },
+  'TLT Soir':     { code: '23', blocks: [[5, 21], [26, 40]] },
+  'Agence Matin': { code: '9',  blocks: [[0, 16], [20, 34]] },
+  'Agence Midi':  { code: '10', blocks: [[2, 18], [22, 36]] },
+  'Agence APREM': { code: '16', blocks: [[4, 18], [22, 38]] },
+  'Agence Soir':  { code: '11', blocks: [[5, 21], [26, 40]] },
+  'BO':           { code: '26', blocks: [[3, 19], [22, 36]] },  // PiloteBO — 8h45-12h45 / 13h30-17h00
+  // Absences journée complète (code Firestore → slots 0–44)
+  'CP':           { code: '30', blocks: [[0, 45]] },
+  'Indisponible': { code: '6',  blocks: [[0, 45]] },
+  'Récup':        { code: '8',  blocks: [[0, 45]] },
+  'Formation':    { code: '5',  blocks: [[4, 18], [22, 38]] },  // 9h00-12h30 / 13h30-17h30
 }
 
 const TLT_VARIANT = {
@@ -48,6 +61,15 @@ const SITE_NAME = {
   'midi':  'Midi',
   'aprem': 'Aprem',
   'soir':  'Soir',
+}
+
+// Codes d'activité Firestore à ne jamais écraser (congés, absences, indisponibilités)
+// '5' (Formation) exclu : le forecast réécrit Formation avec les créneaux corrects (9h-12h30 / 13h30-17h30)
+const PROTECTED_CODES = new Set(['30', '6', '8', '7', '31'])
+
+function hasProtectedActivity(activites) {
+  if (!Array.isArray(activites)) return false
+  return activites.some(a => a && PROTECTED_CODES.has(a))
 }
 
 // Famille d'horaire par catégorie Firestore
@@ -82,6 +104,10 @@ export const SHIFT_COLORS = {
   'TLT Midi':     { bg: 'rgba(201,167,123,0.18)', text: 'rgba(201,167,123,1)' },
   'TLT APREM':    { bg: 'rgba(188,145,87,0.18)',  text: 'rgba(188,145,87,1)'  },
   'TLT Soir':     { bg: 'rgba(163,121,64,0.18)',  text: 'rgba(163,121,64,1)'  },
+  'Agence Matin': { bg: 'rgba(227,255,171,0.22)', text: 'rgba(130,185,60,1)'  },
+  'Agence Midi':  { bg: 'rgba(209,243,142,0.22)', text: 'rgba(115,170,50,1)'  },
+  'Agence APREM': { bg: 'rgba(185,231,94,0.22)',  text: 'rgba(100,155,40,1)'  },
+  'Agence Soir':  { bg: 'rgba(154,192,77,0.22)',  text: 'rgba(85,140,30,1)'   },
   'BO':           { bg: 'rgba(253,224,71,0.2)',    text: 'rgba(253,224,71,1)'  },
   'CP':           { bg: 'rgba(68,0,255,0.12)',     text: 'rgba(68,0,255,1)'    },
   'Indisponible': { bg: 'rgba(176,176,176,0.18)',  text: 'rgba(176,176,176,1)' },
@@ -106,6 +132,7 @@ function buildActivites(shiftName) {
   }
   return arr
 }
+
 
 function resolveEtpDist(etpNum) {
   if (ETP_TABLE[etpNum]) return ETP_TABLE[etpNum]
@@ -189,18 +216,44 @@ function equityScore(history, personName, shift, lastWeekShift, noAssignStreak) 
   return score
 }
 
-// Retourne { name: 'matin'|'midi'|'aprem'|'soir'|'' } — famille uniquement, sans TLT
-function assignWeekFamilies(activePeople, shiftNeeds, history, lastWeekShift, noAssignStreak) {
+// Assignation ETP-stricte par jour avec cohérence hebdo
+// weekFamilies = { name: fam } — shift établi au J1, sert de référence pour les jours suivants
+function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies) {
   const assignments = {}
-  const remaining   = new Set(activePeople.map(p => `${p.nom} ${p.prenom}`))
+  const remaining   = new Set(pool.map(p => `${p.nom} ${p.prenom}`))
+  const poolSize    = remaining.size
+  const SHIFTS      = ['soir', 'aprem', 'midi', 'matin']
+  const totalNeeded = SHIFTS.reduce((s, k) => s + (dayNeeds[k] || 0), 0)
 
-  for (const shift of ['soir', 'aprem', 'midi', 'matin']) {
-    const count = shiftNeeds[shift]
+  // Redimensionnement proportionnel si pool insuffisant (méthode des plus grandes restes)
+  let effectiveNeeds = { soir: dayNeeds.soir || 0, aprem: dayNeeds.aprem || 0, midi: dayNeeds.midi || 0, matin: dayNeeds.matin || 0 }
+  if (poolSize < totalNeeded && totalNeeded > 0) {
+    const exact = {}
+    let floored = 0
+    for (const s of SHIFTS) {
+      exact[s]          = (dayNeeds[s] || 0) * poolSize / totalNeeded
+      effectiveNeeds[s] = Math.floor(exact[s])
+      floored          += effectiveNeeds[s]
+    }
+    const leftover = poolSize - floored
+    SHIFTS
+      .map(s => ({ s, frac: exact[s] - effectiveNeeds[s] }))
+      .sort((a, b) => b.frac - a.frac)
+      .slice(0, leftover)
+      .forEach(({ s }) => effectiveNeeds[s]++)
+  }
+
+  for (const shift of SHIFTS) {
+    const count = effectiveNeeds[shift]
     if (!count) continue
 
-    const candidates = [...remaining]
-      .map(name => ({ name, score: equityScore(history, name, shift, lastWeekShift, noAssignStreak) }))
-      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'fr'))
+    const candidates = [...remaining].map(name => {
+      let score = equityScore(history, name, shift, lastWeekShift, noAssignStreak)
+      const wf = weekFamilies?.[name]
+      if      (wf === shift) score += 0.8   // même shift que J1 → fort bonus de cohérence
+      else if (wf != null)   score -= 0.6   // shift différent de J1 → pénalité modérée
+      return { name, score }
+    }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'fr'))
 
     for (let i = 0; i < Math.min(count, candidates.length); i++) {
       assignments[candidates[i].name] = shift
@@ -226,8 +279,9 @@ export const useForecastStore = defineStore('forecast', () => {
   const genResults    = ref(null)
   const parseError    = ref('')
   const maxBO         = ref(3)
-  const appliedDayIds  = ref([])   // IDs Firestore écrits lors du dernier apply
-  const appliedBackup  = ref({})   // { dayId: previousData | null } pour restauration
+  const appliedDayIds   = ref([])   // IDs Firestore écrits lors du dernier apply
+  const appliedBackup   = ref({})   // { dayId: previousData | null } pour restauration
+  const appliedCollection = ref('plannings') // collection utilisée lors du dernier apply
 
   // Prévisualisation en mémoire
   // preview.dates   = ['2026-05-01', ...]
@@ -294,7 +348,7 @@ export const useForecastStore = defineStore('forecast', () => {
     }
   }
 
-  /* ── Prévisualisation hebdomadaire équitable (dry-run) ── */
+  /* ── Prévisualisation : assignation journalière ETP-stricte ── */
   async function previewPlanningWeekly({ persons, planningData }) {
     if (!forecast.value || !persons.length) return
     const admin = useAdminStore()
@@ -302,182 +356,185 @@ export const useForecastStore = defineStore('forecast', () => {
     previewing.value = true
     preview.value    = null
 
-    // 1. Filtre les personnes "On Run" uniquement (onRun absent = true par défaut)
     const runPersons = persons.filter(p => p.onRun !== false)
-
-    // 2. Analyse de l'historique (sur les personnes Run uniquement)
-    const history = analyzeHistory(planningData)
-
-    // 3. Groupement des dates par semaine ISO
+    const history    = analyzeHistory(planningData)
     const dates      = Object.keys(forecast.value).sort()
-    const weekGroups = {}  // { 'YYYY-WXX': [iso, ...] }
+
+    // Groupement par semaine ISO
+    const weekGroups = {}
     for (const iso of dates) {
       const wk = isoWeekKey(iso)
       if (!weekGroups[wk]) weekGroups[wk] = []
       weekGroups[wk].push(iso)
     }
 
-    const matrix   = {}  // matrix[fullName][iso] = shiftName
-    const allNames = new Set()
+    const matrix         = {}
+    const allNames       = new Set()
+    const lastWeekShift  = {}   // { name: fam } — pour l'équité inter-semaines
+    const noAssignStreak = {}
+    const boWeeksUsed    = {}
 
-    // Suivi inter-semaines pour l'équité
-    const lastWeekShift  = {}  // { fullName: 'matin'|'midi'|'aprem'|'soir' }
-    const noAssignStreak = {}  // { fullName: number } semaines sans shift
-    const boWeeksUsed    = {}  // { fullName: number } semaines BO attribuées ce mois
-
-    // 4. Pour chaque semaine, assigner les shifts
     for (const [, weekDates] of Object.entries(weekGroups).sort(([a], [b]) => a.localeCompare(b))) {
-      // ETP représentatif = max de la semaine hors samedi (couverture garantie)
-      let maxEtp = 0
-      for (const iso of weekDates) {
-        if (!forecast.value[iso].isSam) maxEtp = Math.max(maxEtp, forecast.value[iso].etp)
-      }
-
       const workDates = weekDates.filter(iso => !forecast.value[iso].isSam)
-      const samDates  = weekDates.filter(iso => forecast.value[iso].isSam)
+      const samDates  = weekDates.filter(iso =>  forecast.value[iso].isSam)
 
-      // Personnes Run actives sur la semaine
-      const refDate = new Date((workDates[0] || weekDates[0]) + 'T12:00:00')
+      const refDate      = new Date((workDates[0] || weekDates[0]) + 'T12:00:00')
       const activePeople = runPersons
         .filter(p => admin.isActiveOn(p, refDate))
         .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
-
       activePeople.forEach(p => allNames.add(`${p.nom} ${p.prenom}`))
 
-      // 4a. Repérer les absences pré-existantes (CP, Indispo…) pour cette semaine
-      //     — exclus du pool d'assignation si absent sur la majorité des jours ouvrés
-      const absentForWeek = new Set()
-      const dayAbsences   = {}  // { name: { iso: categorie } }
-
+      // ── 1. Absences jour par jour ──
+      const dayAbsences = {}   // { name: { iso: categorie } }
       for (const p of activePeople) {
-        const name  = `${p.nom} ${p.prenom}`
-        let absDays = 0
+        const name = `${p.nom} ${p.prenom}`
         dayAbsences[name] = {}
-
         for (const iso of workDates) {
           const cat = getAbsenceForDay(planningData, name, iso)
-          if (cat) {
-            dayAbsences[name][iso] = cat
-            absDays++
-          }
-        }
-
-        if (workDates.length > 0 && absDays / workDates.length > 0.5) {
-          absentForWeek.add(name)
+          if (cat) dayAbsences[name][iso] = cat
         }
       }
-
-      // Écrire les absences connues dans la matrice
       for (const [name, absMap] of Object.entries(dayAbsences)) {
         if (!matrix[name]) matrix[name] = {}
-        for (const [iso, cat] of Object.entries(absMap)) {
-          matrix[name][iso] = cat
+        for (const [iso, cat] of Object.entries(absMap)) matrix[name][iso] = cat
+      }
+
+      // ── 2. Pool disponible (présent au moins 50% des jours ouvrés) ──
+      const available = activePeople.filter(p => {
+        const name    = `${p.nom} ${p.prenom}`
+        const absDays = Object.keys(dayAbsences[name] || {}).length
+        return workDates.length === 0 || absDays / workDates.length <= 0.5
+      })
+
+      // ── 3. Attribution BO (hebdomadaire, par rotation équitable) ──
+      const boNames = new Set()
+      if (maxBO.value > 0 && workDates.length) {
+        const boEligible = available
+          .filter(p => p.peutBO)
+          .sort((a, b) => {
+            const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
+            return (boWeeksUsed[na] || 0) - (boWeeksUsed[nb] || 0) || na.localeCompare(nb, 'fr')
+          })
+          .slice(0, maxBO.value)
+        for (const p of boEligible) {
+          const name = `${p.nom} ${p.prenom}`
+          boNames.add(name)
+          boWeeksUsed[name] = (boWeeksUsed[name] || 0) + 1
+          if (!matrix[name]) matrix[name] = {}
+          for (const iso of workDates) {
+            if (!matrix[name][iso]) matrix[name][iso] = 'BO'
+          }
         }
       }
 
-      if (workDates.length && maxEtp > 0) {
-        const available = activePeople.filter(p => !absentForWeek.has(`${p.nom} ${p.prenom}`))
+      if (workDates.length) {
+        // ── 4. Assignation JOURNALIÈRE ETP-stricte ──
+        // weekFamilies = référence cohérence établie au 1er jour ouvré
+        const weekFamilies = {}    // { name: fam }
+        const dayFamilyMap = {}    // { iso: { name: fam } }
 
-        // ── Assignation BO (avant Run, par rotation équitable) ──
-        const boNames = new Set()
-        if (maxBO.value > 0) {
-          const boEligible = available
-            .filter(p => p.peutBO)
-            .sort((a, b) => {
-              const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
-              return (boWeeksUsed[na] || 0) - (boWeeksUsed[nb] || 0) || na.localeCompare(nb, 'fr')
-            })
-            .slice(0, maxBO.value)
+        for (const iso of workDates) {
+          const fc      = forecast.value[iso]
+          const dayNeeds = { matin: fc.matin, midi: fc.midi, aprem: fc.aprem, soir: fc.soir }
 
-          for (const p of boEligible) {
+          // Pool du jour : disponibles, non absents aujourd'hui, non BO
+          const pool = available.filter(p => {
             const name = `${p.nom} ${p.prenom}`
-            boNames.add(name)
-            boWeeksUsed[name] = (boWeeksUsed[name] || 0) + 1
-            if (!matrix[name]) matrix[name] = {}
-            for (const iso of workDates) {
-              if (!matrix[name][iso]) matrix[name][iso] = 'BO'
+            return !boNames.has(name) && !dayAbsences[name]?.[iso]
+          })
+
+          dayFamilyMap[iso] = assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies)
+
+          // Le 1er jour ouvré fixe la référence de cohérence pour le reste de la semaine
+          if (iso === workDates[0]) {
+            for (const [name, fam] of Object.entries(dayFamilyMap[iso])) {
+              if (fam) weekFamilies[name] = fam
             }
           }
         }
 
-        // Pool Run = actifs hors absents et hors BO cette semaine
-        const pool       = available.filter(p => !boNames.has(`${p.nom} ${p.prenom}`))
-        const shiftNeeds = resolveEtpDist(maxEtp)
-
-        // Étape 1 : assigner la famille de shift pour la semaine (sans décision TLT)
-        const familyAssign = assignWeekFamilies(pool, shiftNeeds, history, lastWeekShift, noAssignStreak)
-
-        // Étape 2 : cible 2 jours TLT par personne par semaine
-        //   • pas de TLT le mercredi
-        //   • ≤ 50% de la même famille en TLT le même jour (min 1 si famille de 1)
+        // ── 5. TLT : 2 jours max/personne/semaine, pas mercredi, ≤50%/famille/jour ──
         const nonWedDays = workDates.filter(iso => new Date(iso + 'T12:00:00').getDay() !== 3)
-        const tltAllowed = new Set(pool.filter(p => p.peutTLT !== false).map(p => `${p.nom} ${p.prenom}`))
+        const tltAllowed = new Set(
+          available
+            .filter(p => p.peutTLT !== false && !boNames.has(`${p.nom} ${p.prenom}`))
+            .map(p => `${p.nom} ${p.prenom}`)
+        )
 
-        // Cap par jour et par famille = floor(n/2), min 1
-        const familyCounts = {}
-        for (const fam of Object.values(familyAssign)) {
-          if (fam) familyCounts[fam] = (familyCounts[fam] || 0) + 1
-        }
-
-        const dayTltCount  = {}   // { iso: { fam: n } } — TLT déjà posés ce jour
-        for (const iso of nonWedDays) dayTltCount[iso] = {}
-
-        const personTltDays = {}  // { name: number } — jours TLT attribués cette semaine
-        const tltDayForPerson = {} // { name: Set<iso> }
-
-        const eligible = Object.entries(familyAssign)
-          .filter(([name, fam]) => fam && tltAllowed.has(name))
-
-        // Deux passes pour atteindre 2 jours TLT par personne
-        for (let pass = 0; pass < 2; pass++) {
-          // Priorité aux personnes qui ont le moins de jours TLT cette semaine
-          eligible.sort(([na], [nb]) =>
-            (personTltDays[na] || 0) - (personTltDays[nb] || 0) || na.localeCompare(nb, 'fr')
-          )
-          for (const [name, fam] of eligible) {
-            if ((personTltDays[name] || 0) !== pass) continue  // déjà à jour pour ce pass
-            const cap = Math.max(1, Math.floor((familyCounts[fam] || 1) / 2))
-            if (nonWedDays.length === 0) continue
-            const used = tltDayForPerson[name] || new Set()
-            // Premier jour non encore utilisé pour cette personne et sous le cap famille
-            const day = nonWedDays.find(iso => !used.has(iso) && (dayTltCount[iso][fam] || 0) < cap)
-            if (!day) continue
-            if (!tltDayForPerson[name]) tltDayForPerson[name] = new Set()
-            tltDayForPerson[name].add(day)
-            dayTltCount[day][fam] = (dayTltCount[day][fam] || 0) + 1
-            personTltDays[name]   = (personTltDays[name]   || 0) + 1
-          }
-        }
-
-        // Écrire les shifts jour par jour
+        // Comptage famille par jour (pour le cap TLT)
+        const famCountPerDay = {}
         for (const iso of workDates) {
-          for (const [name, fam] of Object.entries(familyAssign)) {
-            if (!matrix[name]) matrix[name] = {}
-            if (matrix[name][iso]) continue  // ne pas écraser les absences
-            if (!fam) { matrix[name][iso] = ''; continue }
-            matrix[name][iso] = tltDayForPerson[name]?.has(iso) ? TLT_VARIANT[fam] : SITE_NAME[fam]
+          famCountPerDay[iso] = {}
+          for (const fam of Object.values(dayFamilyMap[iso])) {
+            if (fam) famCountPerDay[iso][fam] = (famCountPerDay[iso][fam] || 0) + 1
           }
         }
 
-        // Suivi inter-semaines (Run uniquement — BO et absents exclus)
+        const tltDays        = new Set()   // 'name|iso'
+        const personTltCount = {}
+        const dayTltFamCount = {}
+        for (const iso of nonWedDays) dayTltFamCount[iso] = {}
+
+        for (let pass = 0; pass < 2; pass++) {
+          const eligible = [...tltAllowed]
+            .sort((a, b) => (personTltCount[a] || 0) - (personTltCount[b] || 0) || a.localeCompare(b, 'fr'))
+
+          for (const name of eligible) {
+            if ((personTltCount[name] || 0) !== pass) continue
+            const day = nonWedDays.find(iso => {
+              const fam = dayFamilyMap[iso]?.[name]
+              if (!fam || tltDays.has(`${name}|${iso}`)) return false
+              const total = famCountPerDay[iso][fam] || 1
+              return (dayTltFamCount[iso][fam] || 0) < Math.max(1, Math.floor(total / 2))
+            })
+            if (!day) continue
+            const fam = dayFamilyMap[day][name]
+            tltDays.add(`${name}|${day}`)
+            dayTltFamCount[day][fam] = (dayTltFamCount[day][fam] || 0) + 1
+            personTltCount[name]     = (personTltCount[name] || 0) + 1
+          }
+        }
+
+        // ── 6. Écriture dans la matrice ──
+        for (const iso of workDates) {
+          for (const p of available) {
+            const name = `${p.nom} ${p.prenom}`
+            if (!matrix[name]) matrix[name] = {}
+            if (matrix[name][iso]) continue   // ne pas écraser absences / BO
+            const fam = dayFamilyMap[iso]?.[name]
+            if (!fam) { matrix[name][iso] = ''; continue }
+            matrix[name][iso] = tltDays.has(`${name}|${iso}`) ? TLT_VARIANT[fam] : SITE_NAME[fam]
+          }
+        }
+
+        // ── 7. Mise à jour historique inter-semaines ──
+        // On comptabilise le shift dominant réellement attribué cette semaine
+        const weekCounts = {}   // { name: { fam: n } }
+        for (const iso of workDates) {
+          for (const [name, fam] of Object.entries(dayFamilyMap[iso])) {
+            if (!fam) continue
+            if (!weekCounts[name]) weekCounts[name] = {}
+            weekCounts[name][fam] = (weekCounts[name][fam] || 0) + 1
+          }
+        }
         for (const p of activePeople) {
           const name = `${p.nom} ${p.prenom}`
-          if (absentForWeek.has(name) || boNames.has(name)) continue
-
-          const fam = familyAssign[name]
-          if (fam) {
+          if (boNames.has(name)) continue
+          const counts   = weekCounts[name] || {}
+          const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]
+          if (dominant) {
             if (!history[name]) history[name] = { matin: 0, midi: 0, aprem: 0, soir: 0, total: 0 }
-            history[name][fam]++
+            history[name][dominant]++
             history[name].total++
-            lastWeekShift[name] = fam
+            lastWeekShift[name]  = dominant
             noAssignStreak[name] = 0
-          } else {
+          } else if (!Object.keys(dayAbsences[name] || {}).length) {
             noAssignStreak[name] = (noAssignStreak[name] || 0) + 1
           }
         }
       }
 
-      // Samedi : 2 premières personnes Run actives en Matin
+      // ── Samedi : 2 premières personnes Run actives en Matin ──
       if (samDates.length) {
         const samPeople = runPersons
           .filter(p => admin.isActiveOn(p, new Date(samDates[0] + 'T12:00:00')))
@@ -486,9 +543,7 @@ export const useForecastStore = defineStore('forecast', () => {
           const name = `${p.nom} ${p.prenom}`
           allNames.add(name)
           if (!matrix[name]) matrix[name] = {}
-          if (!matrix[name][samDates[0]]) {
-            matrix[name][samDates[0]] = i === 0 ? 'Matin' : 'TLT Matin'
-          }
+          if (!matrix[name][samDates[0]]) matrix[name][samDates[0]] = i === 0 ? 'Matin' : 'TLT Matin'
         })
       }
     }
@@ -510,7 +565,7 @@ export const useForecastStore = defineStore('forecast', () => {
   }
 
   /* ── Applique la prévisualisation en Firestore ── */
-  async function applyPreview({ persons, overwrite = false, onProgress }) {
+  async function applyPreview({ persons, overwrite = false, collection = 'plannings', onProgress }) {
     if (!preview.value || !forecast.value) return
     const admin = useAdminStore()
 
@@ -534,7 +589,7 @@ export const useForecastStore = defineStore('forecast', () => {
         const dayId = admin.dateToId(date)
 
         // Toujours charger le doc existant : sert au check overwrite ET au backup undo
-        const snap = await getDoc(doc(db, 'plannings', dayId))
+        const snap = await getDoc(doc(db, collection, dayId))
 
         if (!overwrite && snap.exists()) {
           const existing = snap.data().ressources || []
@@ -550,9 +605,22 @@ export const useForecastStore = defineStore('forecast', () => {
           .filter(p => admin.isActiveOn(p, date))
           .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
 
+        // Index des ressources existantes par nom (pour préserver les absences)
+        const existingByName = {}
+        if (snap.exists()) {
+          for (const r of snap.data().ressources || []) {
+            existingByName[`${r.nom} ${r.prenom}`] = r
+          }
+        }
+
         const ressources = activePeople.map(p => {
-          const name  = `${p.nom} ${p.prenom}`
-          const shift = matrix[name]?.[iso] || ''
+          const name     = `${p.nom} ${p.prenom}`
+          const shift    = matrix[name]?.[iso] || ''
+          const existing = existingByName[name]
+          // Ne jamais écraser CP, Indispo, Récup, Formation, Astreinte, RH
+          if (existing && hasProtectedActivity(existing.activites)) {
+            return existing
+          }
           return {
             nom:        p.nom,
             prenom:     p.prenom,
@@ -561,7 +629,7 @@ export const useForecastStore = defineStore('forecast', () => {
           }
         })
 
-        await setDoc(doc(db, 'plannings', dayId), { ressources })
+        await setDoc(doc(db, collection, dayId), { ressources })
         writtenIds.push(dayId)
         done++
       } catch (e) {
@@ -570,9 +638,10 @@ export const useForecastStore = defineStore('forecast', () => {
       }
     }
 
-    appliedDayIds.value = writtenIds
-    appliedBackup.value = backup
-    genResults.value    = { done, skipped, errors, total: dates.length }
+    appliedDayIds.value     = writtenIds
+    appliedBackup.value     = backup
+    appliedCollection.value = collection
+    genResults.value    = { done, skipped, errors, total: dates.length, collection }
     generating.value    = false
   }
 
@@ -580,18 +649,17 @@ export const useForecastStore = defineStore('forecast', () => {
   async function undoApply({ onProgress } = {}) {
     if (!appliedDayIds.value.length) return
     undoing.value = true
-    const ids    = [...appliedDayIds.value]
+    const ids   = [...appliedDayIds.value]
     const backup = appliedBackup.value
+    const coll  = appliedCollection.value
     let n = 0
     for (const dayId of ids) {
       try {
         const previous = backup[dayId]
         if (previous) {
-          // Restaure l'état exact d'avant l'apply
-          await setDoc(doc(db, 'plannings', dayId), previous)
+          await setDoc(doc(db, coll, dayId), previous)
         } else {
-          // N'existait pas avant → supprime
-          await deleteDoc(doc(db, 'plannings', dayId))
+          await deleteDoc(doc(db, coll, dayId))
         }
       } catch (e) {
         console.error(`Erreur annulation ${dayId}:`, e)
@@ -603,6 +671,13 @@ export const useForecastStore = defineStore('forecast', () => {
     appliedBackup.value = {}
     genResults.value    = null
     undoing.value       = false
+  }
+
+  /* ── Modifie une cellule de la matrice à la volée ── */
+  function setMatrixCell(person, iso, shift) {
+    if (!preview.value) return
+    if (!preview.value.matrix[person]) preview.value.matrix[person] = {}
+    preview.value.matrix[person][iso] = shift
   }
 
   function reset() {
@@ -618,6 +693,6 @@ export const useForecastStore = defineStore('forecast', () => {
   return {
     forecast, fileName, parsing, generating, undoing, genResults, parseError,
     preview, previewing, maxBO, appliedDayIds,
-    parseExcel, previewPlanningWeekly, applyPreview, undoApply, reset,
+    parseExcel, previewPlanningWeekly, applyPreview, undoApply, setMatrixCell, reset,
   }
 })

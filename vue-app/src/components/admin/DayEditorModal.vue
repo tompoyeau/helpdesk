@@ -37,14 +37,55 @@
       <div class="blocks-section">
         <div class="section-title">Activités</div>
         <div v-if="!blocks.length" class="empty-hint">Aucune activité — journée vide</div>
-        <div v-for="(b, i) in blocks" :key="i" class="block-row">
-          <span class="block-dot" :style="{ background: activityColor(b.code) }"></span>
-          <span class="block-name">{{ activityName(b.code) }}</span>
-          <span class="block-time">{{ TIME_SLOTS[b.startSlot] }} → {{ TIME_SLOTS[b.endSlot] || TIME_SLOTS[44] }}</span>
-          <button class="btn-remove" @click="removeBlock(i)" title="Supprimer">
-            <Trash2 :size="12" />
-          </button>
+
+        <div v-for="(b, i) in blocks" :key="i" class="block-row" :class="{ 'block-row-editing': editingIdx === i }">
+
+          <!-- ── Mode édition ── -->
+          <template v-if="editingIdx === i">
+            <select v-model="editingBlock.code" class="form-input form-input-edit" @change="editError = ''">
+              <option v-for="[code, act] in activityOptions" :key="code" :value="code">
+                {{ act.categorie }}
+              </option>
+            </select>
+            <button
+              v-if="PRESETS[editingBlock.code]"
+              class="btn-preset-xs"
+              title="Pré-remplir les heures"
+              @click="applyEditPreset"
+            >
+              <Zap :size="10" />
+            </button>
+            <select v-model="editingBlock.startSlot" class="form-input form-input-xs" @change="editError = ''">
+              <option v-for="(t, idx) in TIME_SLOTS.slice(0, 44)" :key="idx" :value="idx">{{ t }}</option>
+            </select>
+            <span style="color:var(--text-muted);font-size:0.75rem;flex-shrink:0">→</span>
+            <select v-model="editingBlock.endSlot" class="form-input form-input-xs" @change="editError = ''">
+              <option
+                v-for="(t, idx) in TIME_SLOTS.slice(1)"
+                :key="idx + 1"
+                :value="idx + 1"
+                :disabled="idx + 1 <= editingBlock.startSlot"
+              >{{ t }}</option>
+            </select>
+            <button class="btn-edit-confirm" title="Valider" @click="confirmEdit"><Check :size="11" /></button>
+            <button class="btn-edit-cancel"  title="Annuler" @click="cancelEdit"><X   :size="11" /></button>
+          </template>
+
+          <!-- ── Mode lecture ── -->
+          <template v-else>
+            <span class="block-dot" :style="{ background: activityColor(b.code) }"></span>
+            <span class="block-name">{{ activityName(b.code) }}</span>
+            <span class="block-time">{{ TIME_SLOTS[b.startSlot] }} → {{ TIME_SLOTS[b.endSlot] || TIME_SLOTS[44] }}</span>
+            <button class="btn-edit-block" title="Modifier ce créneau" @click="startEdit(i)">
+              <Pencil :size="11" />
+            </button>
+            <button class="btn-remove" @click="removeBlock(i)" title="Supprimer">
+              <Trash2 :size="12" />
+            </button>
+          </template>
         </div>
+
+        <div v-if="editError" class="form-error" style="margin-top:6px">{{ editError }}</div>
       </div>
 
       <!-- Formulaire ajout -->
@@ -280,13 +321,61 @@
 
 /* Bouton corbeille (supprimer bloc) */
 .btn-remove {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent;
+  border-radius: var(--radius-sm); color: var(--text-subtle);
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.btn-remove:hover { background: rgba(239,68,68,0.08); color: #EF4444; border-color: rgba(239,68,68,0.3); }
+
+/* Bouton crayon (modifier bloc) */
+.btn-edit-block {
   width: 26px; height: 26px; margin-left: auto;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: 1px solid transparent;
   border-radius: var(--radius-sm); color: var(--text-subtle);
   cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
 }
-.btn-remove:hover { background: rgba(239,68,68,0.08); color: #EF4444; border-color: rgba(239,68,68,0.3); }
+.btn-edit-block:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+
+/* Boutons valider/annuler en mode édition */
+.btn-edit-confirm, .btn-edit-cancel {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); border: 1px solid;
+  cursor: pointer; transition: background 0.12s; flex-shrink: 0;
+}
+.btn-edit-confirm { background: rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.4); color: #059669; }
+.btn-edit-confirm:hover { background: rgba(52,211,153,0.2); }
+.btn-edit-cancel  { background: transparent; border-color: var(--border); color: var(--text-muted); }
+.btn-edit-cancel:hover { background: var(--bg-hover); }
+
+/* Bloc en cours d'édition */
+.block-row-editing {
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  margin: 0 -6px;
+  flex-wrap: wrap;
+  gap: 5px !important;
+}
+
+/* Input select compact pour l'édition inline */
+.form-input-edit { width: 130px; font-size: 0.6875rem; padding: 4px 6px; }
+.form-input-xs   { width: 76px;  font-size: 0.6875rem; padding: 4px 6px; }
+
+/* Bouton preset compact (mode édition) */
+.btn-preset-xs {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; flex-shrink: 0;
+  background: rgba(245,158,11,0.12); color: #D97706;
+  border: 1px solid rgba(245,158,11,0.3); border-radius: var(--radius-sm);
+  cursor: pointer; transition: background 0.15s;
+}
+.btn-preset-xs:hover { background: rgba(245,158,11,0.22); }
 
 /* Bouton Pré-remplir */
 .btn-preset {
@@ -364,7 +453,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { X, Trash2, Plus, Zap, Users, CalendarDays, Clock } from 'lucide-vue-next'
+import { X, Trash2, Plus, Zap, Users, CalendarDays, Clock, Pencil, Check } from 'lucide-vue-next'
 import { useAdminStore, TIME_SLOTS } from '@/stores/adminStore'
 import { ACTIVITY_MAPPING } from '@/stores/dataStore'
 
@@ -513,7 +602,53 @@ function addBlock() {
 }
 
 function removeBlock(i) {
+  if (editingIdx.value === i) cancelEdit()
   blocks.value = blocks.value.filter((_, idx) => idx !== i)
+}
+
+/* ── Édition inline d'un bloc existant ── */
+const editingIdx   = ref(null)
+const editingBlock = ref(null)
+const editError    = ref('')
+
+function startEdit(i) {
+  editingIdx.value   = i
+  editingBlock.value = { ...blocks.value[i] }
+  editError.value    = ''
+  overlapError.value = ''
+}
+
+function cancelEdit() {
+  editingIdx.value   = null
+  editingBlock.value = null
+  editError.value    = ''
+}
+
+function applyEditPreset() {
+  const preset = PRESETS[editingBlock.value.code]
+  if (!preset || !preset.length) return
+  editingBlock.value.startSlot = preset[0].startSlot
+  editingBlock.value.endSlot   = preset[preset.length - 1].endSlot
+}
+
+function confirmEdit() {
+  editError.value = ''
+  const { code, startSlot, endSlot } = editingBlock.value
+  if (!code || endSlot <= startSlot) {
+    editError.value = 'Créneau invalide.'
+    return
+  }
+  const overlap = blocks.value.some((b, i) =>
+    i !== editingIdx.value && startSlot < b.endSlot && endSlot > b.startSlot
+  )
+  if (overlap) {
+    editError.value = 'Ce créneau chevauche une autre activité.'
+    return
+  }
+  blocks.value = blocks.value
+    .map((b, i) => i === editingIdx.value ? { code, startSlot, endSlot } : b)
+    .sort((a, b) => a.startSlot - b.startSlot)
+  cancelEdit()
 }
 
 /* ── Navigation étapes ── */

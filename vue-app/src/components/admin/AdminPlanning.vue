@@ -1,13 +1,28 @@
 <template>
   <div>
     <!-- Navigation semaine -->
-    <div class="planning-nav" style="margin-bottom:16px">
+    <div class="planning-nav" style="margin-bottom:8px">
       <button class="btn-icon" @click="weekOffset--"><ChevronLeft :size="16" /></button>
       <WeekPicker :week-offset="weekOffset" :week-dates="weekDates" @update:week-offset="weekOffset = $event" />
       <button class="btn-icon" @click="weekOffset++"><ChevronRight :size="16" /></button>
       <button class="btn-primary" style="font-size:0.8125rem;padding:6px 12px" @click="weekOffset = 0">
         <CalendarCheck :size="12" /> Aujourd'hui
       </button>
+      <button
+        class="btn-test-collection"
+        :class="{ 'btn-test-active': admin.collectionName !== 'plannings' }"
+        style="margin-left:auto"
+        @click="toggleTestCollection"
+      >
+        <FlaskConical :size="12" />
+        {{ admin.collectionName !== 'plannings' ? 'Base TEST' : 'Base prod' }}
+      </button>
+    </div>
+
+    <!-- Bannière mode test -->
+    <div v-if="admin.collectionName !== 'plannings'" class="test-banner">
+      <FlaskConical :size="11" />
+      Vous consultez <strong>plannings_test</strong> — les modifications ici n'affectent pas la production
     </div>
 
     <!-- Cartes jours -->
@@ -280,13 +295,35 @@
 @media (max-width: 768px) {
   .days-grid { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ── Mode test ── */
+.btn-test-collection {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; font-size: 0.75rem; font-weight: 600;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-test-collection:hover { background: var(--bg-hover); color: var(--text); }
+.btn-test-active {
+  background: rgba(245,158,11,0.1) !important;
+  border-color: #f59e0b !important;
+  color: #f59e0b !important;
+}
+.test-banner {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 14px; margin-bottom: 14px;
+  background: rgba(245,158,11,0.1); border: 1px solid #f59e0b;
+  border-radius: var(--radius-sm); font-size: 0.75rem;
+  font-weight: 500; color: #b45309;
+}
 </style>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical,
 } from 'lucide-vue-next'
 import { useAdminStore } from '@/stores/adminStore'
 import { useUserStore } from '@/stores/userStore'
@@ -303,8 +340,22 @@ const DAYS      = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
 const DAYS_FULL = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
 const MONTHS    = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 
+/* ── Bascule collection test/prod ── */
+async function toggleTestCollection() {
+  admin.collectionName = admin.collectionName === 'plannings' ? 'plannings_test' : 'plannings'
+  dayStatus.value = {}
+  dayData.value   = null
+  await checkWeekStatus()
+  if (selectedDate.value) {
+    loadingDay.value = true
+    dayData.value    = await admin.loadDayPlanning(selectedDate.value)
+    loadingDay.value = false
+  }
+}
+
 /* ── Semaine ── */
-const weekOffset = ref(0)
+const weekOffset = ref(parseInt(localStorage.getItem('admin_planning_week_offset') || '0', 10))
+watch(weekOffset, val => localStorage.setItem('admin_planning_week_offset', String(val)))
 
 function getMondayOf(offset) {
   const today = new Date()
@@ -498,7 +549,7 @@ function fmtHeures(h) {
 }
 
 /* ── Tri par type d'horaire ── */
-const sortByHoraire = ref(false)
+const sortByHoraire = ref(true)
 
 // Rang combiné = créneau * 10 + lieu
 // Créneau : Matin=0, Midi=1, Aprem=2, Soir=3, PiloteBO=4
