@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, computed } from 'vue'
 import { db } from '@/firebase/config'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 
 /* ============================================================
    ACTIVITY MAPPING
@@ -41,6 +41,17 @@ export const ACTIVITY_MAPPING = {
    TIME SLOTS (15 min, 8h00 → 19h00)
    ============================================================ */
 
+export const HORAIRE_RANK = {
+  'Matin': 0, 'TLT Matin': 1, 'TLT Agence Matin': 2, 'Agence Matin': 3, 'MatinW11': 4,
+  'Midi': 10, 'TLT Midi': 11, 'TLT Agence Midi': 12, 'Agence Midi': 13,
+  'Aprem': 20, 'TLT APREM': 21, 'TLT Agence APREM': 22, 'Agence APREM': 23, 'ApremRenf': 24, 'Formation': 25,
+  'Soir': 30, 'TLT Soir': 31, 'TLT Agence Soir': 32, 'Agence Soir': 33, 'SoirW11': 34,
+  'PiloteBO': 40, 'BO': 40,
+  'Pilote': 80,
+  'Récup': 85, 'Astreinte': 86, 'RH': 87,
+  'CP': 90, 'Indisponible': 91,
+}
+
 export const TIME_SLOTS = []
 for (let i = 0; i <= 44; i++) {
   const totalMin = 8 * 60 + i * 15
@@ -63,7 +74,7 @@ function parseDateFromId(id) {
   return `${id.slice(4, 8)}-${id.slice(2, 4)}-${id.slice(0, 2)}`
 }
 
-function analyzeActivities(activites) {
+export function analyzeActivities(activites) {
   if (!Array.isArray(activites) || !activites.length) return []
 
   const entries = []
@@ -127,6 +138,7 @@ export const useDataStore = defineStore('data', () => {
   const _persons        = ref([])
   const _personnesData  = shallowRef({})
   const _nameToPersonId = shallowRef({})
+  const _nameToUid      = shallowRef({}) // "NOM Prenom" → Firebase Auth UID
 
   const categories = ref([])
   const colors     = ref({})
@@ -140,6 +152,17 @@ export const useDataStore = defineStore('data', () => {
 
   // Données filtrées — shallowRef : évite le proxy récursif de byPerson (milliers d'objets)
   const filtered = shallowRef(null)
+
+  // Abonnements Firestore temps-réel
+  let _unsubPlanning  = null
+  let _unsubPersonnes = null
+
+  // Debounce pour computeFiltered (évite les recalculs en rafale lors d'un forecast)
+  let _computeTimer = null
+  function _scheduleComputeFiltered() {
+    if (_computeTimer) clearTimeout(_computeTimer)
+    _computeTimer = setTimeout(() => { _computeTimer = null; computeFiltered() }, 300)
+  }
 
   /* ── Personnes actives (computed — mis en cache automatiquement) ── */
   const activePersonsList = computed(() => {
@@ -177,79 +200,71 @@ export const useDataStore = defineStore('data', () => {
   // Compatibilité : garde activePersons() comme fonction pour les composants existants
   function activePersons() { return activePersonsList.value }
 
-  /* ── Chargement ── */
+  /* ── Helpers de traitement des snapshots ── */
 
-  async function loadPlanning() {
-    // Ne gère plus loading ici — c'est init() qui le pilote
-    error.value = null
-    try {
-      const snapshot = await getDocs(collection(db, 'plannings'))
-      const rawData  = []
-      snapshot.forEach(doc => rawData.push({ id: doc.id, ...doc.data() }))
+  function _processPlanning(snapshot) {
+    const newPlanning       = {}
+    const allCategories     = new Set()
+    const allColors         = {}
+    const newNameToPersonId = {}
 
-      const newPlanning   = {}
-      const allCategories = new Set()
-      const allColors     = {}
+    snapshot.forEach(docSnap => {
+      const day  = docSnap.data()
+      const date = parseDateFromId(docSnap.id)
+      if (!date || !Array.isArray(day.ressources)) return
 
-      const newNameToPersonId = {}
+      day.ressources.forEach(person => {
+        const fullName = `${person.nom} ${person.prenom}`
+        if (!newPlanning[fullName]) newPlanning[fullName] = {}
+        if (person.idPersonne) newNameToPersonId[fullName] = person.idPersonne
 
-      rawData.forEach(day => {
-        const date = parseDateFromId(day.id)
-        if (!date || !Array.isArray(day.ressources)) return
-
-        day.ressources.forEach(person => {
-          const fullName = `${person.nom} ${person.prenom}`
-          if (!newPlanning[fullName]) newPlanning[fullName] = {}
-          if (person.idPersonne) newNameToPersonId[fullName] = person.idPersonne
-
-          const entries = analyzeActivities(person.activites || [])
-          if (entries.length > 0) {
-            newPlanning[fullName][date] = entries
-            entries.forEach(e => {
-              allCategories.add(e.categorie)
-              if (!allColors[e.categorie]) allColors[e.categorie] = e.couleur
-            })
-          }
-        })
+        const entries = analyzeActivities(person.activites || [])
+        if (entries.length > 0) {
+          newPlanning[fullName][date] = entries
+          entries.forEach(e => {
+            allCategories.add(e.categorie)
+            if (!allColors[e.categorie]) allColors[e.categorie] = e.couleur
+          })
+        }
       })
+    })
 
-      // Assignations en bloc : une seule notification réactive par ref
-      _nameToPersonId.value = newNameToPersonId
-      _planning.value       = newPlanning
-      _persons.value        = Object.keys(newPlanning).sort()
-      categories.value      = [...allCategories].sort()
-      colors.value          = allColors
+    _nameToPersonId.value = newNameToPersonId
+    _planning.value       = newPlanning
+    _persons.value        = Object.keys(newPlanning).sort()
+    categories.value      = [...allCategories].sort()
+    colors.value          = allColors
 
-      if (import.meta.env.DEV) {
-        console.log(`✅ Planning : ${_persons.value.length} collaborateurs, ${rawData.length} jours`)
-      }
-    } catch (e) {
-      error.value = e.message
-      if (import.meta.env.DEV) console.error('❌ Firestore :', e)
-    }
+    if (import.meta.env.DEV)
+      console.log(`✅ Planning : ${_persons.value.length} collaborateurs, ${snapshot.size} jours`)
   }
 
-  async function loadPersonnes() {
-    try {
-      const snapshot = await getDocs(collection(db, 'personnes'))
-      const newData  = {}
-      snapshot.forEach(doc => {
-        const data = doc.data()
-        const id   = data.id || doc.id
-        newData[id] = data
-      })
-      // Assignation en bloc — une seule notification réactive
-      _personnesData.value = newData
-      if (import.meta.env.DEV) {
-        console.log(`✅ Personnes : ${Object.keys(_personnesData.value).length}`)
-      }
-    } catch (e) {
-      if (import.meta.env.DEV) console.warn('⚠️ personnes :', e)
-    }
+  function _processPersonnes(snapshot) {
+    const newData     = {}
+    const newNameToUid = {}
+    snapshot.forEach(docSnap => {
+      const d  = docSnap.data()
+      const id = d.id || docSnap.id
+      newData[id] = d
+      // docSnap.id = Firebase Auth UID (clé du document personnes)
+      if (d.nom && d.prenom) newNameToUid[`${d.nom} ${d.prenom}`] = docSnap.id
+    })
+    _personnesData.value = newData
+    _nameToUid.value     = newNameToUid
+    if (import.meta.env.DEV)
+      console.log(`✅ Personnes : ${Object.keys(newData).length}`)
+  }
+
+  /* ── Abonnements temps-réel ── */
+
+  function cleanup() {
+    if (_unsubPlanning)  { _unsubPlanning();  _unsubPlanning  = null }
+    if (_unsubPersonnes) { _unsubPersonnes(); _unsubPersonnes = null }
+    if (_computeTimer)   { clearTimeout(_computeTimer); _computeTimer = null }
   }
 
   async function init() {
-    // Plage par défaut : 1 an glissant (formatage local, sans décalage UTC)
+    // Plage par défaut : 1 an glissant
     const today      = new Date()
     const oneYearAgo = new Date(today)
     oneYearAgo.setFullYear(today.getFullYear() - 1)
@@ -257,15 +272,49 @@ export const useDataStore = defineStore('data', () => {
     filterStart.value = fmtDate(oneYearAgo)
     filterEnd.value   = fmtDate(today)
 
-    // loading reste true jusqu'à ce que LES DEUX chargements soient terminés
-    // (évite le race condition où la sidebar se rend avec _personnesData vide)
-    loading.value = true
-    try {
-      await Promise.all([loadPlanning(), loadPersonnes()])
-    } finally {
-      loading.value = false
-    }
+    // Résilie les abonnements précédents avant d'en créer de nouveaux
+    cleanup()
 
+    error.value   = null
+    loading.value = true
+
+    await Promise.all([
+      // ── plannings ──
+      new Promise(resolve => {
+        let first = true
+        _unsubPlanning = onSnapshot(
+          collection(db, 'plannings'),
+          snapshot => {
+            _processPlanning(snapshot)
+            if (first) { first = false; resolve() }
+            else _scheduleComputeFiltered()
+          },
+          err => {
+            error.value = err.message
+            if (import.meta.env.DEV) console.error('❌ plannings :', err)
+            if (first) { first = false; resolve() }
+          }
+        )
+      }),
+      // ── personnes ──
+      new Promise(resolve => {
+        let first = true
+        _unsubPersonnes = onSnapshot(
+          collection(db, 'personnes'),
+          snapshot => {
+            _processPersonnes(snapshot)
+            if (first) { first = false; resolve() }
+            else _scheduleComputeFiltered()
+          },
+          err => {
+            if (import.meta.env.DEV) console.warn('⚠️ personnes :', err)
+            if (first) { first = false; resolve() }
+          }
+        )
+      }),
+    ])
+
+    loading.value = false
     computeFiltered()
   }
 
@@ -321,6 +370,7 @@ export const useDataStore = defineStore('data', () => {
     planning:     _planning,
     persons:      _persons,
     personnesData: _personnesData,
+    nameToUid:    _nameToUid,
     categories,
     colors,
     loading,
@@ -330,6 +380,7 @@ export const useDataStore = defineStore('data', () => {
     filterEnd,
     filterActive,
     init,
+    cleanup,
     computeFiltered,
     activePersons,
   }

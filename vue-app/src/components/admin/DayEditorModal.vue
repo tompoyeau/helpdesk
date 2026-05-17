@@ -132,7 +132,7 @@
 
       <div class="modal-footer">
         <button class="btn-ghost" @click="$emit('close')">Annuler</button>
-        <button class="btn-save" :disabled="!blocks.length" @click="goToStep2">Valider</button>
+        <button class="btn-save" :disabled="!blocks.length || !hasChanged" @click="goToStep2">Valider</button>
       </div>
     </div>
 
@@ -474,6 +474,8 @@ const applyCollabsWholeWeek = ref(false)
 
 /* ── Données ── */
 const blocks = ref(admin.parseBlocks(props.ressource.activites || []))
+const _initialBlocks = JSON.stringify(blocks.value)
+const hasChanged = computed(() => JSON.stringify(blocks.value) !== _initialBlocks)
 const newBlock = ref({ code: '', startSlot: 0, endSlot: 4 })
 const overlapError = ref('')
 

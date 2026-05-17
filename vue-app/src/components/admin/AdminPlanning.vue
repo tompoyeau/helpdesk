@@ -83,7 +83,8 @@
 
       <template v-else>
         <!-- Tableau des collaborateurs -->
-        <table class="w-full" style="font-size:0.8125rem">
+        <div class="table-scroll-wrap">
+        <table class="w-full" style="font-size:0.8125rem;min-width:520px">
           <thead>
             <tr>
               <th style="width:180px">Collaborateur</th>
@@ -151,6 +152,7 @@
             </tr>
           </tbody>
         </table>
+        </div><!-- /table-scroll-wrap -->
       </template>
     </div>
 
@@ -251,6 +253,8 @@
 }
 .day-editor-header h3 { font-size: 0.875rem; font-weight: 700; margin: 0; }
 
+.table-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 .mini-timeline {
   display: flex; height: 24px; border-radius: 6px; overflow: hidden;
   border: 1px solid var(--border); width: 100%;
@@ -305,6 +309,7 @@
   cursor: pointer; transition: all 0.15s; white-space: nowrap;
 }
 .btn-test-collection:hover { background: var(--bg-hover); color: var(--text); }
+@media (max-width: 1024px) { .btn-test-collection { display: none !important; } }
 .btn-test-active {
   background: rgba(245,158,11,0.1) !important;
   border-color: #f59e0b !important;
@@ -333,8 +338,8 @@ import {
 } from 'lucide-vue-next'
 import { useAdminStore } from '@/stores/adminStore'
 import { useUserStore } from '@/stores/userStore'
-import { useDataStore } from '@/stores/dataStore'
-import { ACTIVITY_MAPPING } from '@/stores/dataStore'
+import { useDataStore, ACTIVITY_MAPPING, HORAIRE_RANK } from '@/stores/dataStore'
+import { notifyPlanningChange } from '@/services/notificationService'
 import DayEditorModal from './DayEditorModal.vue'
 import WeekPicker    from '@/components/planning/WeekPicker.vue'
 
@@ -555,50 +560,12 @@ function fmtHeures(h) {
 /* ── Tri par type d'horaire ── */
 const sortByHoraire = ref(true)
 
-// Rang combiné = créneau * 10 + lieu
-// Créneau : Matin=0, Midi=1, Aprem=2, Soir=3, PiloteBO=4
-// Lieu    : Client=0, TLT=1, TLT Agence=2, Agence=3, W11=4
-const HORAIRE_RANK = {
-  // Matin
-  '0':  0,   // Matin client
-  '20': 1,   // TLT Matin
-  '12': 2,   // TLT Agence Matin
-  '9':  3,   // Agence Matin
-  '28': 4,   // Matin W11
-  // Midi
-  '1':  10,  // Midi client
-  '21': 11,  // TLT Midi
-  '13': 12,  // TLT Agence Midi
-  '10': 13,  // Agence Midi
-  // Aprem + Formation (même niveau)
-  '15': 20,  // Aprem client
-  '22': 21,  // TLT Aprem
-  '17': 22,  // TLT Agence Aprem
-  '16': 23,  // Agence Aprem
-  '27': 24,  // ApremRenf
-  '5':  25,  // Formation
-  // Soir
-  '2':  30,  // Soir client
-  '23': 31,  // TLT Soir
-  '14': 32,  // TLT Agence Soir
-  '11': 33,  // Agence Soir
-  '29': 34,  // Soir W11
-  // PiloteBO (après Soir)
-  '26': 40,
-  // Pilotage (juste avant CP/Indisponible)
-  '24': 80,
-  // CP / Indisponible (en dernier)
-  '8':  85,  // Récup
-  '7':  86,  // Astreinte
-  '31': 87,  // RH
-  '30': 90,  // CP
-  '6':  91,  // Indisponible
-}
-
 function horaireRank(activites) {
   if (!Array.isArray(activites)) return 99
   const first = activites.find(a => a && a !== '')
-  return first !== undefined ? (HORAIRE_RANK[String(first)] ?? 99) : 99
+  if (first === undefined) return 99
+  const cat = ACTIVITY_MAPPING[String(first)]?.categorie
+  return cat !== undefined ? (HORAIRE_RANK[cat] ?? 99) : 99
 }
 
 /* ── Éditeur personne/jour ── */
@@ -619,21 +586,31 @@ async function clearActivites(r) {
   clearTarget.value = null
   // Sauvegarde immédiate sans attendre "Enregistrer le planning"
   await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
-  await data.init()
   const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && a !== '')).length
   dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { state: 'exists', filledCount, total: mergedRessources.value.length } }
 }
 
 function applyActivitesToRessource(idPersonne, activites) {
-  // Met à jour mergedRessources (via dayData.ressources)
-  const existing = dayData.value.ressources.find(r => r.idPersonne === idPersonne)
-  if (existing) {
-    existing.activites = activites
+  const idx = dayData.value.ressources.findIndex(r => r.idPersonne === idPersonne)
+  if (idx >= 0) {
+    // Réassignation de l'objet entier pour garantir la réactivité Vue
+    dayData.value.ressources[idx] = { ...dayData.value.ressources[idx], activites }
   } else {
     const meta = mergedRessources.value.find(r => r.idPersonne === idPersonne)
     if (meta) dayData.value.ressources.push({ ...meta, activites })
   }
 }
+
+function fmtIso(date) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+}
+
+function uidForId(idPersonne) {
+  const r = mergedRessources.value.find(r => r.idPersonne === idPersonne)
+  if (!r) return null
+  return data.nameToUid[`${r.nom} ${r.prenom}`] || null
+}
+
 
 async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabsWholeWeek }) {
   try {
@@ -645,7 +622,6 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
 
     // Sauvegarde immédiate du jour courant
     await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
-    await data.init()
     const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && a !== '')).length
     dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { state: 'exists', filledCount, total: mergedRessources.value.length } }
     saveSuccess.value = true
@@ -655,6 +631,19 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
     const otherDays = weekDates.value.filter(d =>
       fmtId(d) !== currentId && d.getDay() !== 6 && !isFerie(d)
     )
+
+    // ── Notifications ──
+    const mainUid = data.nameToUid[`${editRessource.value.nom} ${editRessource.value.prenom}`]
+    const notifDates = [selectedDate.value, ...(applyWholeWeek ? otherDays : [])]
+    for (const date of notifDates)
+      notifyPlanningChange(mainUid, fmtIso(date))
+
+    for (const id of toCollabIds) {
+      const uid = uidForId(id)
+      const collabDates = [selectedDate.value, ...(applyCollabsWholeWeek ? otherDays : [])]
+      for (const date of collabDates)
+        notifyPlanningChange(uid, fmtIso(date))
+    }
 
     // 2. Applique sur toute la semaine pour le collab courant
     if (applyWholeWeek) {
@@ -688,7 +677,6 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
       }
     }
   } finally {
-    // Ferme la modal dans tous les cas (succès ou erreur)
     editRessource.value = null
   }
 }

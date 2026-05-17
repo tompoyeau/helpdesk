@@ -700,6 +700,9 @@ a { text-decoration: none; color: inherit; }
 
 .layout-main { min-width: 0; }
 
+/* Table scroll wrapper */
+.table-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 /* Visibility helpers */
 .desktop-only      { display: flex !important; }
 .mobile-only       { display: none !important; }
@@ -722,6 +725,12 @@ a { text-decoration: none; color: inherit; }
   .layout-body { grid-template-columns: 1fr; }
   .desktop-only { display: none !important; }
   .mobile-only  { display: flex !important; }
+
+  /* Espace sous le contenu pour ne pas être masqué par la bottom nav */
+  .layout-main {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+  }
 
   .sidebar-left {
     position: fixed;
@@ -792,12 +801,38 @@ a { text-decoration: none; color: inherit; }
   .header-title-block h1 { font-size: 13px; }
   .hide-xs { display: none !important; }
   .sidebar-left, .sidebar-right { top: 52px; }
-  .content-card { border-radius: var(--radius-lg); padding: 14px; }
+  .content-card { border-radius: var(--radius-lg); padding: 14px; overflow-x: auto; }
   .content-card h2 { font-size: 14px; margin-bottom: 12px; }
   .content-card h3 { font-size: 12px; }
-  .content-card { overflow-x: auto; }
   .content-card table { min-width: 320px; }
   .charts-container { display: none !important; }
+
+  /* KPI collab : scroll horizontal au lieu d'une grille 2x2 */
+  .person-stats-grid {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    gap: 8px;
+    padding-bottom: 4px;
+    margin-bottom: 0;
+  }
+  .person-stat-card {
+    flex: 0 0 160px;
+    scroll-snap-align: start;
+  }
+
+  /* Par catégorie + Répartition : empilés verticalement */
+  .person-double-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Table scroll wrapper global */
+  .table-scroll-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 
@@ -1458,8 +1493,11 @@ a { text-decoration: none; color: inherit; }
   .planning-grid-header { display: none; }
 
   .planning-header { flex-direction: column; align-items: stretch; }
-  .planning-nav    { justify-content: space-between; }
-  .planning-period { font-size: 0.8125rem; min-width: unset; }
+  .planning-nav    { justify-content: center; gap: 8px; padding: 6px 10px; }
+  .planning-period { font-size: 0.8125rem; min-width: 0; }
+  .wp-label-full   { display: none; }
+  .wp-label-short  { display: inline; }
+  .btn-sort        { display: none !important; }
 
   /* Card per person */
   .planning-row {

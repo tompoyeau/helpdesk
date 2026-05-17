@@ -31,7 +31,7 @@
             v-for="t in tabs"
             :key="t.key"
             class="admin-tab"
-            :class="{ active: tab === t.key }"
+            :class="{ active: tab === t.key, 'mobile-hidden': t.mobileHidden }"
             @click="tab = t.key"
           >
             <component :is="t.icon" :size="13" />
@@ -92,10 +92,13 @@
 .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .admin-body { padding: 20px; }
 
+@media (max-width: 1024px) {
+  .mobile-hidden { display: none !important; }
+}
 </style>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { Shield, ShieldOff, Users, CalendarDays, TrendingUp } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
 import AdminCollaborateurs from '@/components/admin/AdminCollaborateurs.vue'
@@ -108,8 +111,16 @@ const tab = ref('collab')
 const tabs = [
   { key: 'collab',    label: 'Collaborateurs', icon: Users        },
   { key: 'planning',  label: 'Planning',       icon: CalendarDays },
-  { key: 'forecast',  label: 'Forecast',       icon: TrendingUp   },
+  { key: 'forecast',  label: 'Forecast',       icon: TrendingUp,  mobileHidden: true },
 ]
+
+// Si on est sur mobile et que l'onglet actif est masqué, revenir à collab
+onMounted(() => {
+  const isMobile = window.matchMedia('(max-width: 1024px)').matches
+  if (isMobile && tabs.find(t => t.key === tab.value)?.mobileHidden) {
+    tab.value = 'collab'
+  }
+})
 
 // Charge la liste dès que isAdmin devient true (y compris au refresh,
 // quand Firebase finit de s'initialiser après le montage du composant)

@@ -33,6 +33,8 @@
       class="drawer-backdrop open"
       @click="ui.closeAllDrawers()"
     />
+    <!-- Navigation mobile (bottom bar) -->
+    <BottomNav />
   </div>
 </template>
 
@@ -42,15 +44,18 @@ import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useDataStore } from '@/stores/dataStore'
 import { useUserStore } from '@/stores/userStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 import LoginOverlay from '@/components/LoginOverlay.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SidebarLeft from '@/components/layout/SidebarLeft.vue'
 import SidebarRight from '@/components/layout/SidebarRight.vue'
+import BottomNav from '@/components/layout/BottomNav.vue'
 
-const auth     = useAuthStore()
-const ui       = useUiStore()
-const data     = useDataStore()
-const userStore = useUserStore()
+const auth        = useAuthStore()
+const ui          = useUiStore()
+const data        = useDataStore()
+const userStore   = useUserStore()
+const notifStore  = useNotificationStore()
 
 onMounted(async () => {
   ui.initDark()
@@ -63,11 +68,14 @@ onMounted(async () => {
 // (connexion initiale, login via LoginOverlay, déconnexion)
 watch(() => auth.user, async (newUser, oldUser) => {
   if (newUser && !oldUser) {
-    // Connexion : charge le rôle puis les données
+    // Connexion : charge le rôle, les données, puis les notifications
     await userStore.loadUser(newUser.uid)
     await data.init()
+    notifStore.subscribe(newUser.uid)
   } else if (!newUser && oldUser) {
-    // Déconnexion : réinitialise le rôle
+    // Déconnexion : résilie tous les abonnements Firestore
+    data.cleanup()
+    notifStore.cleanup()
     userStore.reset()
   }
 })

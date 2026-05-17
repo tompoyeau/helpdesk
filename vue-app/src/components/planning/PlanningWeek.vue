@@ -120,7 +120,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useDataStore } from '@/stores/dataStore'
+import { useDataStore, HORAIRE_RANK } from '@/stores/dataStore'
 import { useAuthStore } from '@/stores/authStore'
 import { db } from '@/firebase/config'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
@@ -202,16 +202,6 @@ const activePeople = computed(() => data.activePersons())
 /* ── Tri par catégorie d'horaire ── */
 const sortByHoraire = ref(false)
 
-const HORAIRE_RANK = {
-  'Matin': 0, 'TLT Matin': 1, 'TLT Agence Matin': 2, 'Agence Matin': 3, 'MatinW11': 4,
-  'Midi': 10, 'TLT Midi': 11, 'TLT Agence Midi': 12, 'Agence Midi': 13,
-  'Aprem': 20, 'TLT APREM': 21, 'TLT Agence APREM': 22, 'Agence APREM': 23, 'ApremRenf': 24, 'Formation': 25,
-  'Soir': 30, 'TLT Soir': 31, 'TLT Agence Soir': 32, 'Agence Soir': 33, 'SoirW11': 34,
-  'PiloteBO': 40, 'BO': 40,
-  'Pilote': 80,
-  'Récup': 85, 'Astreinte': 87, 'RH': 87,
-  'CP': 90, 'Indisponible': 91,
-}
 
 function horaireRank(person) {
   const days = weekDates.value

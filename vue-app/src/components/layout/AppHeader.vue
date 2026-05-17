@@ -1,9 +1,6 @@
 <template>
   <header class="app-header flex items-center justify-between px-4 py-0" style="height:52px;flex-shrink:0;position:sticky;top:0;z-index:100">
     <div class="flex items-center gap-3">
-      <button class="btn-icon mobile-only" @click="ui.leftDrawerOpen = true">
-        <Users :size="15" />
-      </button>
       <div class="app-logo">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
@@ -18,7 +15,7 @@
       </div>
     </div>
 
-    <nav class="header-nav">
+    <nav class="header-nav desktop-only">
       <RouterLink to="/planning" class="header-nav-btn" :class="{ active: route.path === '/planning' }">
         <CalendarDays :size="13" />
         <span class="hide-xs">Planning</span>
@@ -35,16 +32,11 @@
 
     <div class="flex items-center gap-2">
       <DateRangePicker class="desktop-only" />
-      <button class="btn-icon mobile-only" @click="ui.dateSheetOpen = true">
-        <Calendar :size="15" />
-      </button>
       <div class="header-sep desktop-only"></div>
+      <NotificationBell />
       <button class="btn-icon" @click="ui.toggleDark()">
         <Moon v-if="!ui.darkMode" :size="15" />
         <Sun v-else :size="15" />
-      </button>
-      <button class="btn-icon mobile-only" @click="ui.rightDrawerOpen = true">
-        <Tag :size="15" />
       </button>
       <button class="btn-icon" @click="auth.signOut()" title="Déconnexion">
         <LogOut :size="15" />
@@ -58,8 +50,9 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
-import { Users, CalendarDays, LayoutDashboard, Calendar, Moon, Sun, Tag, LogOut, Shield } from 'lucide-vue-next'
-import DateRangePicker from '@/components/layout/DateRangePicker.vue'
+import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield } from 'lucide-vue-next'
+import DateRangePicker   from '@/components/layout/DateRangePicker.vue'
+import NotificationBell  from '@/components/layout/NotificationBell.vue'
 
 const route     = useRoute()
 const ui        = useUiStore()

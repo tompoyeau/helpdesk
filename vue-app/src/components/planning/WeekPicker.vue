@@ -4,7 +4,8 @@
     <!-- Trigger -->
     <div class="planning-period planning-period-picker" @click="toggle">
       <Calendar :size="14" />
-      <span>{{ label }}</span>
+      <span class="wp-label-full">{{ label }}</span>
+      <span class="wp-label-short">{{ shortLabel }}</span>
       <ChevronDown :size="13" style="opacity:0.7;margin-left:2px" />
     </div>
 
@@ -121,6 +122,14 @@ const label = computed(() => {
   return `S${week} · du ${fmt(s)} au ${fmt(e)} ${year}`
 })
 
+const shortLabel = computed(() => {
+  const s = props.weekDates[0]
+  const e = props.weekDates[4]
+  const fmt = d => `${d.getDate()} ${MONTHS_SH[d.getMonth()]}`
+  const week = isoWeekNumber(s)
+  return `S${week} · ${fmt(s)}–${fmt(e)}`
+})
+
 /* ── Calcul du lundi d'une date ── */
 function toMonday(date) {
   const d   = new Date(date)
@@ -204,6 +213,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onOutside))
   display: inline-flex;
   align-items: center;
 }
+
+.wp-label-short { display: none; }
 
 /* ── Dropdown ── */
 .wp-dropdown {

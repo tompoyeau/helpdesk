@@ -78,11 +78,12 @@
     </div>
 
     <!-- ── Par catégorie + Répartition par horaire ── -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;margin-bottom:4px">
+    <div class="person-double-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;margin-bottom:4px">
 
       <div>
         <h3>Par catégorie</h3>
-        <table class="w-full">
+        <div class="table-scroll-wrap">
+        <table class="w-full" style="min-width:200px">
           <thead><tr><th>Catégorie</th><th>Jours</th></tr></thead>
           <tbody>
             <tr
@@ -101,6 +102,7 @@
             </tr>
           </tbody>
         </table>
+        </div><!-- /table-scroll-wrap -->
       </div>
 
       <div>
@@ -178,7 +180,8 @@
     </div>
 
     <!-- ── Tableau de détails ── -->
-    <table class="w-full">
+    <div class="table-scroll-wrap">
+    <table class="w-full" style="min-width:320px">
       <thead><tr><th>Date</th><th>Catégorie</th><th>Horaires</th></tr></thead>
       <tbody>
         <tr
@@ -200,6 +203,7 @@
         </tr>
       </tbody>
     </table>
+    </div><!-- /table-scroll-wrap -->
 
     <DayModal v-model="modalOpen" :person="personName" :date-str="modalDate" />
   </div>
