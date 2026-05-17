@@ -1,3 +1,15 @@
+/**
+ * userStore.js — Données du collaborateur connecté et liste des comptes
+ *
+ * Responsabilités :
+ *  - Charger le rôle (isAdmin) depuis Firestore après connexion
+ *  - Fournir la liste complète des collaborateurs à la vue Admin
+ *  - Permettre de basculer le rôle admin d'un utilisateur
+ *  - Se réinitialiser proprement à la déconnexion
+ *
+ * Collection Firestore : `personnes/{uid}` → { nom, prenom, email, isAdmin }
+ * Le UID Firebase Auth correspond directement à l'ID du document.
+ */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { db } from '@/firebase/config'

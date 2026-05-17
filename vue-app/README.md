@@ -1,54 +1,126 @@
-# vue-app
+# Helio — Dashboard de planning d'équipe
 
-This template should help get you started developing with Vue 3 in Vite.
+Application web interne de pilotage du planning et des statistiques d'activité.
 
-## Recommended IDE Setup
+## Stack technique
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+| Couche | Techno |
+|--------|--------|
+| Framework | Vue 3 (Composition API, `<script setup>`) |
+| État | Pinia |
+| Routeur | Vue Router 5 |
+| Backend | Firebase (Auth + Firestore) |
+| Style | Tailwind CSS v4 + design system `src/assets/main.css` |
+| Graphiques | ApexCharts (`vue3-apexcharts`) |
+| Build | Vite 8 |
+| PWA | `vite-plugin-pwa` — installable sur mobile et desktop |
 
-## Recommended Browser Setup
+---
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
+## Lancer le projet
 
 ```sh
-npm install
+npm install      # installer les dépendances
+npm run dev      # serveur de développement (http://localhost:5173/helpdesk/)
+npm run build    # build de production → dist/
 ```
 
-### Compile and Hot-Reload for Development
+---
 
-```sh
-npm run dev
+## Architecture des stores Pinia
+
+```
+authStore       → Session Firebase (connexion / déconnexion)
+userStore       → Rôle et liste des collaborateurs  (Firestore: personnes/)
+dataStore       → Données planning filtrées + calculs stats  (Firestore: planning/)
+adminStore      → CRUD planning admin (écriture Firestore)
+forecastStore   → Import Excel prévisionnel BO / ETP
+uiStore         → État visuel (dark mode, drawers mobiles, vue active)
+notifStore      → Notifications temps réel par utilisateur
 ```
 
-### Type-Check, Compile and Minify for Production
+**Cycle de vie (App.vue) :**
+1. `auth.init()` → attend que Firebase confirme la session
+2. Si connecté → `userStore.loadUser()` + `data.init()` + `notifStore.subscribe()`
+3. Si déconnecté → `data.cleanup()` + `notifStore.cleanup()` + `userStore.reset()`
 
-```sh
-npm run build
+---
+
+## Structure des vues et composants
+
+```
+src/
+├── views/
+│   ├── PlanningView.vue      → Planning semaine (grille collaborateurs)
+│   ├── DashboardView.vue     → Tableau de bord (graphiques + stats globales)
+│   ├── PersonView.vue        → Fiche détaillée d'un collaborateur
+│   ├── CatView.vue           → Détail d'une catégorie d'activité
+│   └── AdminView.vue         → Interface admin (planning, collaborateurs, forecast)
+│
+├── components/
+│   ├── layout/
+│   │   ├── AppHeader.vue         → En-tête sticky : nav desktop, dark mode, notifs
+│   │   ├── SidebarLeft.vue       → Menu + liste collaborateurs (drawer sur mobile)
+│   │   ├── SidebarRight.vue      → Détail contextuel personne/catégorie
+│   │   ├── BottomNav.vue         → Navigation mobile fixe (Teleport sur body)
+│   │   ├── DateRangePicker.vue   → Sélecteur de période (filtre global des données)
+│   │   └── NotificationBell.vue  → Cloche + dropdown notifications temps réel
+│   │
+│   ├── planning/
+│   │   ├── PlanningWeek.vue      → Grille semaine complète
+│   │   ├── PlanningRow.vue       → Ligne d'un collaborateur (créneaux colorés)
+│   │   ├── WeekPicker.vue        → Sélecteur de semaine (navigation ←/→)
+│   │   └── DayModal.vue          → Modal clic sur un créneau (détail du jour)
+│   │
+│   ├── dashboard/
+│   │   ├── ChartsBlock.vue       → Graphique donut répartition lieux
+│   │   ├── GlobalStats.vue       → Tableau stats tous collaborateurs
+│   │   ├── PersonDetail.vue      → KPI + timeline activités + export ICS agenda
+│   │   └── CatDetail.vue         → Liste personnes/dates pour une catégorie
+│   │
+│   └── admin/
+│       ├── AdminPlanning.vue       → Recherche + édition du planning
+│       ├── AdminCollaborateurs.vue → CRUD collaborateurs
+│       ├── AdminForecast.vue       → Import Excel prévisionnel BO
+│       ├── DayEditorModal.vue      → Modal édition d'une journée (admin)
+│       ├── CollaborateurModal.vue  → Modal ajout/édition collaborateur
+│       └── WeekPickerModal.vue     → Modal sélection semaine (admin)
 ```
 
-### Run Unit Tests with [Vitest](https://vitest.dev/)
+---
 
-```sh
-npm run test:unit
+## Structure Firestore
+
+```
+personnes/{uid}
+  → { nom, prenom, email, isAdmin }
+  → notifications/{id} : { title, message, createdAt, read }
+
+planning/{annee-semaine}/{collaborateur}/{date}
+  → tableau de créneaux : [{ categorie, horaire, couleur, slots }]
 ```
 
-### Lint with [ESLint](https://eslint.org/)
+Le mapping code activité → catégorie/couleur est défini dans `src/stores/dataStore.js` (`ACTIVITY_MAPPING`).
 
-```sh
-npm run lint
+---
+
+## Icônes PWA
+
+Les icônes se trouvent dans `public/`. Pour les regénérer après modification du logo :
+
+```bash
+node scripts/icons/generate-icons.mjs
+```
+
+Source SVG : `scripts/icons/icon-source.svg`
+
+---
+
+## Déploiement
+
+L'app est déployée sur **GitHub Pages** à l'URL `/helpdesk/`.
+
+```bash
+npm run build   # génère dist/
+git push        # déclenche le déploiement automatique
 ```

@@ -1,3 +1,16 @@
+/**
+ * notificationStore.js — Notifications temps réel par utilisateur
+ *
+ * Écoute en temps réel la sous-collection Firestore :
+ *   `personnes/{uid}/notifications` (50 dernières, triées par date desc)
+ *
+ * Cycle de vie :
+ *  - subscribe(uid) : appelé dans App.vue après connexion
+ *  - cleanup()      : appelé dans App.vue à la déconnexion (résilie le listener)
+ *
+ * Chaque notification : { id, title, message, createdAt, read }
+ * Le badge affiche `unreadCount` (notifications non lues).
+ */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { db } from '@/firebase/config'

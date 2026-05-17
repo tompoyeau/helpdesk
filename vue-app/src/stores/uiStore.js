@@ -1,3 +1,14 @@
+/**
+ * uiStore.js — État de l'interface utilisateur
+ *
+ * Gère tout ce qui est purement visuel / navigation :
+ *  - Mode sombre (persisté en localStorage)
+ *  - Vue active et personne/catégorie sélectionnée (sidebar droite)
+ *  - Ouverture des drawers mobiles (gauche, droite, date)
+ *  - Recherche dans la liste des collaborateurs
+ *
+ * N'effectue aucun appel Firestore — dépendance zéro aux autres stores.
+ */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 

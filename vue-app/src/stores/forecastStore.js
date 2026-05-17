@@ -567,6 +567,7 @@ export const useForecastStore = defineStore('forecast', () => {
   async function applyPreview({ persons, overwrite = false, collection = 'plannings', onProgress }) {
     if (!preview.value || !forecast.value) return
     const admin = useAdminStore()
+    const { useDataStore } = await import('./dataStore')
 
     generating.value    = true
     genResults.value    = null
@@ -574,9 +575,11 @@ export const useForecastStore = defineStore('forecast', () => {
     appliedBackup.value = {}
 
     let done = 0, skipped = 0, errors = 0
-    const writtenIds = []
-    const backup     = {}
+    const writtenIds   = []
+    const backup       = {}
+    const notifChanges = []  // { uid, isoDate } pour les notifications groupées
     const { dates, matrix } = preview.value
+    const nameToUid = useDataStore().nameToUid
     let processed = 0
 
     for (const iso of dates) {
@@ -631,6 +634,16 @@ export const useForecastStore = defineStore('forecast', () => {
         await setDoc(doc(db, collection, dayId), { ressources })
         writtenIds.push(dayId)
         done++
+
+        // Collecte les notifications (prod uniquement, dans les 15 jours)
+        if (collection === 'plannings') {
+          for (const p of activePeople) {
+            const name   = `${p.nom} ${p.prenom}`
+            const uid    = nameToUid[name]
+            const shift  = matrix[name]?.[iso] || ''
+            if (uid) notifChanges.push({ uid, isoDate: iso, detail: shift || 'Non affecté' })
+          }
+        }
       } catch (e) {
         console.error(`Erreur application ${iso}:`, e)
         errors++
@@ -642,6 +655,12 @@ export const useForecastStore = defineStore('forecast', () => {
     appliedCollection.value = collection
     genResults.value    = { done, skipped, errors, total: dates.length, collection }
     generating.value    = false
+
+    // Envoi groupé des notifications après la fin de l'écriture
+    if (notifChanges.length) {
+      const { batchNotifyPlanningChanges } = await import('@/services/notificationService')
+      batchNotifyPlanningChanges(notifChanges)
+    }
   }
 
   /* ── Annule le dernier apply (supprime les documents écrits) ── */
