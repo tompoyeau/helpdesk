@@ -121,6 +121,7 @@ function locationFor(date) {
   if (cat.includes('TLT Agence')) return { icon: '💼', label: 'TLT Agence' }
   if (cat.includes('TLT'))        return { icon: '🏠', label: 'Domicile'   }
   if (cat.includes('Agence'))     return { icon: '🏢', label: 'Agence'     }
+  if (cat === 'RH')               return { icon: '🏢', label: 'Agence'     }
   return                                  { icon: '👤', label: 'Client'     }
 }
 

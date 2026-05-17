@@ -2,18 +2,31 @@
   <div id="loginOverlay">
     <div class="login-card">
 
-      <!-- Logo -->
-      <div class="login-logo">
-        <svg width="26" height="26" viewBox="0 0 18 18" fill="none">
-          <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.95"/>
-          <rect x="11" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.55"/>
-          <rect x="1" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.55"/>
-          <rect x="11" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.95"/>
+      <!-- Logo + Titre -->
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+        <svg width="56" height="56" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="512" height="512" rx="110" ry="110" fill="url(#bg-login)"/>
+          <defs>
+            <linearGradient id="bg-login" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#4F46E5"/>
+              <stop offset="100%" stop-color="#7C3AED"/>
+            </linearGradient>
+          </defs>
+          <g transform="translate(256,256)" stroke="white" stroke-linecap="round" stroke-width="26" opacity="0.7">
+            <line x1="0" y1="-108" x2="0" y2="-148"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(45)"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(90)"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(135)"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(180)"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(225)"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(270)"/>
+            <line x1="0" y1="-108" x2="0" y2="-148" transform="rotate(315)"/>
+          </g>
+          <circle cx="256" cy="256" r="78" fill="white"/>
         </svg>
+        <h2 class="login-title" style="margin:0">Helio</h2>
       </div>
-
-      <h2 class="login-title">Dashboard CAI</h2>
-      <p class="login-subtitle">Connectez-vous pour accéder au pilotage de l'activité.</p>
+      <p class="login-subtitle">Connectez-vous pour continuer.</p>
 
       <form class="login-form" @submit.prevent="handleSubmit" novalidate>
 

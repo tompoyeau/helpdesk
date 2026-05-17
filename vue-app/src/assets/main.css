@@ -142,8 +142,8 @@ a { text-decoration: none; color: inherit; }
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.25);
+  background: none;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -670,7 +670,6 @@ a { text-decoration: none; color: inherit; }
 
 .dark .app-header    { background: #0C0E1F; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
 .dark .app-sidebar   { background: var(--bg-sidebar); box-shadow: inset -1px 0 0 var(--border); }
-.dark .app-logo      { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); }
 .dark .content-card  { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); }
 .dark .content-card thead th { background: #141528; }
 .dark .content-card tbody td { border-color: var(--border); }
@@ -1083,10 +1082,9 @@ a { text-decoration: none; color: inherit; }
 .login-logo {
   width: 52px; height: 52px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  background: none;
   display: flex; align-items: center; justify-content: center;
   margin-bottom: 20px;
-  box-shadow: 0 8px 20px rgba(99,102,241,0.35);
 }
 
 .login-title {

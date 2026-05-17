@@ -11,15 +11,21 @@
           {{ firstDay ? '· ' + formatFR(firstDay) + ' → ' + formatFR(lastDay) : '' }}
         </span>
       </div>
-      <a
-        v-if="userStore.isAdmin && personEmail"
-        :href="`mailto:${personEmail}`"
-        class="btn-email"
-        :title="`Envoyer un mail à ${personEmail}`"
-      >
-        <Mail :size="13" />
-        Envoyer un mail
-      </a>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button v-if="isOwnProfile" class="btn-ics" title="Exporter mon planning dans mon agenda (.ics)" @click="exportICS">
+          <Download :size="13" />
+          <span class="hide-xs">Agenda</span>
+        </button>
+        <a
+          v-if="userStore.isAdmin && personEmail"
+          :href="`mailto:${personEmail}`"
+          class="btn-email"
+          :title="`Envoyer un mail à ${personEmail}`"
+        >
+          <Mail :size="13" />
+          <span class="hide-xs">Envoyer un mail</span>
+        </a>
+      </div>
     </div>
 
     <!-- ── KPI cards ── -->
@@ -242,13 +248,25 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
 import { useUserStore } from '@/stores/userStore'
-import { Mail } from 'lucide-vue-next'
+import { Mail, Download } from 'lucide-vue-next'
+import { useAuthStore } from '@/stores/authStore'
 import DayModal from '@/components/planning/DayModal.vue'
 
 const props     = defineProps({ personName: { type: String, required: true } })
 const data      = useDataStore()
 const userStore = useUserStore()
+const auth      = useAuthStore()
 const router    = useRouter()
+
+// Nom complet de l'utilisateur connecté (uid → personnesData)
+const currentUserName = computed(() => {
+  const uid = auth.user?.uid
+  if (!uid) return ''
+  const p = data.personnesData?.[uid]
+  return p ? `${p.nom} ${p.prenom}` : ''
+})
+
+const isOwnProfile = computed(() => currentUserName.value === props.personName)
 
 // Email du collaborateur (depuis la collection personnes)
 const personEmail = computed(() => {
@@ -477,18 +495,87 @@ const visibleDays = computed(() => {
 })
 
 function openModal(day) { modalDate.value = day; modalOpen.value = true }
+
+/* ── Export ICS ── */
+function exportICS() {
+  // Utilise le planning complet (non filtré) pour couvrir les 2 prochaines semaines
+  const details = data.planning?.[props.personName]
+  if (!details) return
+
+  // Scope : aujourd'hui + 13 jours (2 semaines)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const limit = new Date(today)
+  limit.setDate(limit.getDate() + 13)
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const scopeStart = fmt(today)
+  const scopeEnd   = fmt(limit)
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Dashboard CAI//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ]
+
+  const slug = props.personName.toLowerCase().replace(/\s+/g, '-')
+
+  for (const dateISO of Object.keys(details).sort()) {
+    if (dateISO < scopeStart || dateISO > scopeEnd) continue
+    for (const entry of details[dateISO]) {
+      if (!entry.horaire) continue
+      const parts = entry.horaire.split('-')
+      if (parts.length !== 2) continue
+      const dtDate  = dateISO.replace(/-/g, '')
+      const dtStart = `${dtDate}T${parts[0].replace(':', '')}00`
+      const dtEnd   = `${dtDate}T${parts[1].replace(':', '')}00`
+      const uid     = `cai-${slug}-${dateISO}-${parts[0].replace(':','')}@dashboard`
+
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTART:${dtStart}`,
+        `DTEND:${dtEnd}`,
+        `SUMMARY:${entry.categorie}`,
+        `DESCRIPTION:${entry.horaire} — ${entry.categorie}`,
+        'END:VEVENT',
+      )
+    }
+  }
+
+  lines.push('END:VCALENDAR')
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `planning-${slug}.ics`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <style scoped>
-.btn-email {
+.btn-email, .btn-ics {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 14px; border-radius: var(--radius-md);
   font-size: 0.8125rem; font-weight: 600;
-  background: var(--accent); color: #fff;
-  border: none; cursor: pointer; text-decoration: none;
   white-space: nowrap; flex-shrink: 0;
   transition: background 0.15s, transform 0.1s;
+  cursor: pointer; text-decoration: none;
+}
+.btn-email {
+  background: var(--accent); color: #fff;
+  border: none;
 }
 .btn-email:hover  { background: var(--accent-hover); }
 .btn-email:active { transform: scale(0.97); }
+
+.btn-ics {
+  background: var(--bg); color: var(--text);
+  border: 1.5px solid var(--border);
+}
+.btn-ics:hover  { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
+.btn-ics:active { transform: scale(0.97); }
 </style>

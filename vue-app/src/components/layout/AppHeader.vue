@@ -2,16 +2,22 @@
   <header class="app-header flex items-center justify-between px-4 py-0" style="height:52px;flex-shrink:0;position:sticky;top:0;z-index:100">
     <div class="flex items-center gap-3">
       <div class="app-logo">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
-          <rect x="11" y="1" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.55"/>
-          <rect x="1" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.55"/>
-          <rect x="11" y="11" width="6" height="6" rx="1.5" fill="white" fill-opacity="0.9"/>
+        <svg width="38" height="38" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+          <g transform="translate(256,256)" stroke="white" stroke-linecap="round" stroke-width="36" opacity="0.75">
+            <line x1="0" y1="-148" x2="0" y2="-108"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(45)"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(90)"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(135)"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(180)"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(225)"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(270)"/>
+            <line x1="0" y1="-148" x2="0" y2="-108" transform="rotate(315)"/>
+          </g>
+          <circle cx="256" cy="256" r="82" fill="white"/>
         </svg>
       </div>
       <div class="header-title-block">
-        <h1 class="text-sm font-semibold tracking-tight leading-tight">Dashboard - CAI</h1>
-        <p class="text-xs leading-tight hide-xs" style="color:rgba(255,255,255,0.4)">Pilotage de l'activité</p>
+        <h1 class="text-sm font-semibold tracking-tight leading-tight">Helio</h1>
       </div>
     </div>
 
