@@ -118,6 +118,16 @@ export const SHIFT_COLORS = {
 
 const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
 
+// Jours fériés français 2025-2027 (filet de sécurité si l'Excel ne les marque pas ETP=null)
+const FERIES_FR = new Set([
+  '2025-01-01','2025-04-21','2025-05-01','2025-05-08','2025-05-29','2025-06-09',
+  '2025-07-14','2025-08-15','2025-11-01','2025-11-11','2025-12-25',
+  '2026-01-01','2026-04-06','2026-05-01','2026-05-08','2026-05-14','2026-05-25',
+  '2026-07-14','2026-08-15','2026-11-01','2026-11-11','2026-12-25',
+  '2027-01-01','2027-03-29','2027-05-01','2027-05-06','2027-05-08','2027-05-17',
+  '2027-07-14','2027-08-15','2027-11-01','2027-11-11','2027-12-25',
+])
+
 /* ============================================================
    HELPERS
    ============================================================ */
@@ -291,6 +301,14 @@ export const useForecastStore = defineStore('forecast', () => {
   const previewing = ref(false)
 
   /* ── Parse le fichier Excel ── */
+  //
+  // Structure des fichiers XLSM de planning :
+  //   - Feuilles "semaine XX" : une par semaine, avec pour chaque jour ouvré :
+  //       • ligne PREV (col B = 'PREV', col G = ETP attendu pour ce jour)
+  //       • ligne Equipe (col A = 'Equipe', col B = 'LUN 06/07' — date du jour)
+  //   - L'ETP est lu en col G de chaque ligne PREV (valeur saisie directement
+  //     par les managers, indépendante des formules complexes de la feuille Prévisions)
+  //
   async function parseExcel(file) {
     parsing.value    = true
     parseError.value = ''
@@ -302,42 +320,90 @@ export const useForecastStore = defineStore('forecast', () => {
       const buffer = await file.arrayBuffer()
       const wb = read(buffer, { type: 'array', cellDates: true })
 
-      const wsName = wb.SheetNames.find(n =>
-        n.toLowerCase().replace(/\s/g, '').includes('pr')
-      )
-      if (!wsName) throw new Error('Feuille "Prévisions" introuvable dans le fichier')
+      // ── Déterminer l'année de référence ──
+      // Source 1 : nom du fichier (ex: "Planning FO Juillet 2026.xlsm")
+      // Source 2 : première date lisible dans la feuille Prévisions
+      // Source 3 : année courante
+      let yearRef = parseInt(file.name.match(/20\d{2}/)?.[0]) || 0
+      if (!yearRef) {
+        const prevSheet = wb.SheetNames.find(n =>
+          n.toLowerCase().replace(/\s/g, '').includes('pr')
+        )
+        if (prevSheet) {
+          const prevRows = utils.sheet_to_json(wb.Sheets[prevSheet], { header: 1, defval: null })
+          for (let i = 9; i < prevRows.length; i++) {
+            const dr = prevRows[i]?.[3]
+            const d  = dr instanceof Date ? dr
+              : (typeof dr === 'number' && dr > 30000
+                  ? new Date(Math.round((dr - 25569) * 86400000))
+                  : null)
+            if (d && d.getFullYear() > 2000) { yearRef = d.getFullYear(); break }
+          }
+        }
+        if (!yearRef) yearRef = new Date().getFullYear()
+      }
 
-      const rows = utils.sheet_to_json(wb.Sheets[wsName], { header: 1, defval: null })
+      // ── Lire les feuilles "semaine XX" ──
+      // Chaque feuille contient N blocs jour, chacun composé de :
+      //   • une ligne PREV  → col B = 'PREV',   col G = ETP du jour
+      //   • une ligne Equipe → col A = 'Equipe', col B = 'LUN 06/07' (date)
+      const weekSheets = wb.SheetNames.filter(n => /semaine/i.test(n))
+      if (!weekSheets.length)
+        throw new Error('Aucune feuille "semaine XX" trouvée dans le fichier')
+
+      const DOW_PREFIX = { LUN: 1, MAR: 2, MER: 3, JEU: 4, VEN: 5, SAM: 6, DIM: 0 }
       const result = {}
 
-      for (let i = 9; i < rows.length; i++) {
-        const row = rows[i]
-        if (!row) continue
-        const dateVal = row[3]
-        const etpVal  = row[12]
+      for (const sheetName of weekSheets) {
+        const wRows = utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null })
 
-        if (!(dateVal instanceof Date) || etpVal == null) continue
-        const dow = dateVal.getDay()
-        if (dow === 0) continue
+        for (let i = 0; i < wRows.length; i++) {
+          const row = wRows[i]
+          if (!row || row[1] !== 'PREV') continue   // chercher les lignes PREV
 
-        const iso    = `${dateVal.getFullYear()}-${String(dateVal.getMonth() + 1).padStart(2, '0')}-${String(dateVal.getDate()).padStart(2, '0')}`
-        const etpNum = Math.round(Number(etpVal))
-        if (etpNum <= 0) continue
+          const etpRaw = row[6]   // col G = ETP (R Run)
 
-        const dist = resolveEtpDist(etpNum)
-        result[iso] = {
-          jourSemaine: JOURS[dow],
-          etp:   etpNum,
-          matin: dist.matin,
-          midi:  dist.midi,
-          aprem: dist.aprem,
-          soir:  dist.soir,
-          isSam: dow === 6,
+          // Trouver la ligne "Equipe" suivante (dans les 4 lignes qui suivent)
+          let equipeRow = null
+          for (let j = i + 1; j <= i + 4 && j < wRows.length; j++) {
+            if (wRows[j]?.[0] === 'Equipe') { equipeRow = wRows[j]; break }
+          }
+          if (!equipeRow) continue
+
+          // Extraire la date depuis "LUN 06/07", "SAM 11/07", etc.
+          const dateStr = typeof equipeRow[1] === 'string' ? equipeRow[1] : ''
+          const match   = dateStr.match(/(\d{2})\/(\d{2})/)
+          if (!match) continue
+
+          const day = parseInt(match[1], 10)
+          const mon = parseInt(match[2], 10)
+          const iso = `${yearRef}-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+
+          // Jour de la semaine depuis le préfixe ("LUN", "MAR", …)
+          const prefix = dateStr.slice(0, 3).toUpperCase()
+          const dow    = DOW_PREFIX[prefix] ?? new Date(iso + 'T12:00:00').getDay()
+
+          if (dow === 0 || dow === 6) continue  // skip dimanche et samedi
+          if (FERIES_FR.has(iso)) continue      // skip jours fériés
+
+          const etpNum = Math.round(Number(etpRaw))
+          if (!etpRaw || isNaN(etpNum) || etpNum <= 0) continue
+
+          const dist = resolveEtpDist(etpNum)
+          result[iso] = {
+            jourSemaine: JOURS[dow],
+            etp:   etpNum,
+            matin: dist.matin,
+            midi:  dist.midi,
+            aprem: dist.aprem,
+            soir:  dist.soir,
+            isSam: dow === 6,
+          }
         }
       }
 
       if (!Object.keys(result).length)
-        throw new Error('Aucune ligne de données valide trouvée dans la feuille Prévisions')
+        throw new Error('Aucune donnée valide trouvée dans les feuilles "semaine XX"')
 
       forecast.value = result
     } catch (e) {
@@ -369,19 +435,25 @@ export const useForecastStore = defineStore('forecast', () => {
 
     const matrix         = {}
     const allNames       = new Set()
+    const activeByDate   = {}   // { iso: Set<name> } — personnes actives par jour
     const lastWeekShift  = {}   // { name: fam } — pour l'équité inter-semaines
     const noAssignStreak = {}
     const boWeeksUsed    = {}
 
-    for (const [, weekDates] of Object.entries(weekGroups).sort(([a], [b]) => a.localeCompare(b))) {
-      const workDates = weekDates.filter(iso => !forecast.value[iso].isSam)
-      const samDates  = weekDates.filter(iso =>  forecast.value[iso].isSam)
+    const sortedWeeks = Object.entries(weekGroups).sort(([a], [b]) => a.localeCompare(b))
+
+    for (const [, weekDates] of sortedWeeks) {
+      const workDates = weekDates  // plus de samedis dans le forecast
 
       const refDate      = new Date((workDates[0] || weekDates[0]) + 'T12:00:00')
       const activePeople = runPersons
         .filter(p => admin.isActiveOn(p, refDate))
         .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
       activePeople.forEach(p => allNames.add(`${p.nom} ${p.prenom}`))
+
+      // Enregistrer les personnes actives pour chaque jour de cette semaine
+      const activeNames = new Set(activePeople.map(p => `${p.nom} ${p.prenom}`))
+      for (const iso of weekDates) activeByDate[iso] = activeNames
 
       // ── 1. Absences jour par jour ──
       const dayAbsences = {}   // { name: { iso: categorie } }
@@ -398,12 +470,8 @@ export const useForecastStore = defineStore('forecast', () => {
         for (const [iso, cat] of Object.entries(absMap)) matrix[name][iso] = cat
       }
 
-      // ── 2. Pool disponible (présent au moins 50% des jours ouvrés) ──
-      const available = activePeople.filter(p => {
-        const name    = `${p.nom} ${p.prenom}`
-        const absDays = Object.keys(dayAbsences[name] || {}).length
-        return workDates.length === 0 || absDays / workDates.length <= 0.5
-      })
+      // ── 2. Pool disponible (toutes les personnes actives, les absences sont gérées jour par jour) ──
+      const available = activePeople
 
       // ── 3. Attribution BO (hebdomadaire, par rotation équitable) ──
       const boNames = new Set()
@@ -533,24 +601,13 @@ export const useForecastStore = defineStore('forecast', () => {
         }
       }
 
-      // ── Samedi : 2 premières personnes Run actives en Matin ──
-      if (samDates.length) {
-        const samPeople = runPersons
-          .filter(p => admin.isActiveOn(p, new Date(samDates[0] + 'T12:00:00')))
-          .slice(0, 2)
-        samPeople.forEach((p, i) => {
-          const name = `${p.nom} ${p.prenom}`
-          allNames.add(name)
-          if (!matrix[name]) matrix[name] = {}
-          if (!matrix[name][samDates[0]]) matrix[name][samDates[0]] = i === 0 ? 'Matin' : 'TLT Matin'
-        })
-      }
     }
 
     preview.value = {
       dates,
       persons:  [...allNames].sort((a, b) => a.localeCompare(b, 'fr')),
       matrix,
+      activeByDate,
       history:  analyzeHistory(
         Object.fromEntries(
           Object.entries(planningData).filter(([name]) =>

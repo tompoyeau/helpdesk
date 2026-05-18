@@ -197,9 +197,14 @@
                       :title="etpTitle(iso)"
                     >
                       <template v-if="etpStats[iso]">
-                        <div class="etp-num">{{ etpStats[iso].actual }}</div>
+                        <!-- Chiffre demandé par le forecast (PREV col G) -->
+                        <div class="etp-num">{{ etpStats[iso].expected }}</div>
                         <div class="etp-sub">
-                          {{ etpStats[iso].diff === 0 ? '✓' : (etpStats[iso].diff > 0 ? '+' + etpStats[iso].diff : etpStats[iso].diff) }}
+                          <!-- Manque de ressources RUN ce jour -->
+                          <span v-if="etpStats[iso].shortfall < 0" style="color:inherit">{{ etpStats[iso].shortfall }}</span>
+                          <span v-else>✓</span>
+                          <!-- Ressources actives sans horaire (banc) -->
+                          <span v-if="etpStats[iso].extraBench > 0" class="etp-bo">+{{ etpStats[iso].extraBench }}</span>
                         </div>
                       </template>
                       <span v-else class="etp-na">—</span>
@@ -542,7 +547,8 @@
   border-radius: 0 !important;
 }
 .etp-num  { font-size: 0.625rem; font-weight: 800; line-height: 1.2; }
-.etp-sub  { font-size: 0.5rem;   font-weight: 700; line-height: 1.2; opacity: 0.9; }
+.etp-sub  { font-size: 0.5rem; font-weight: 700; line-height: 1.2; opacity: 0.9; display: flex; align-items: center; justify-content: center; gap: 2px; flex-wrap: wrap; }
+.etp-bo   { color: #a78bfa; opacity: 1; }   /* violet discret pour les ressources BO */
 .etp-na   { font-size: 0.5rem; color: var(--text-subtle); }
 
 .td-name {
@@ -768,7 +774,7 @@ const SHIFT_SHORT = {
   'TLT Matin':    'TM',  'TLT Midi':  'TMi',  'TLT APREM': 'TA',  'TLT Soir':  'TS',
   'Agence Matin': 'AM',  'Agence Midi':'AMi', 'Agence APREM':'AA','Agence Soir':'AS',
   'BO':           'BO',
-  'CP':           'CP',  'Indisponible': 'Ind', 'Récup':    'Réc',
+  'CP':           'CP',  'Indisponible': 'Ind', 'Récup': 'Réc',
   'Formation': 'For',
   '':             '—',
 }
@@ -888,13 +894,25 @@ const etpStats = computed(() => {
 
     const expM = fcDay.matin || 0, expMi = fcDay.midi || 0
     const expA = fcDay.aprem || 0, expS  = fcDay.soir || 0
-    const expTotal = expM + expMi + expA + expS         // = fcDay.etp
-    const actTotal = actual.matin + actual.midi + actual.aprem + actual.soir + actual.bo
+    const expTotal = expM + expMi + expA + expS   // = fcDay.etp
+
+    // Les BO ne comptent pas dans l'ETP (ressources hors RUN)
+    const actRun   = actual.matin + actual.midi + actual.aprem + actual.soir
+    const shortfall = actRun - expTotal  // négatif si manque de ressources
+
+    // +N = personnes actives ce jour sans horaire (ni shift, ni absence, ni BO)
+    // = disponibles mais non affectées au RUN (banc, surplus)
+    const activeNames = fc.preview.activeByDate?.[iso]
+    const extraBench = fc.preview.persons.filter(p => {
+      if (activeNames && !activeNames.has(p)) return false  // pas active ce jour
+      return fc.preview.matrix[p]?.[iso] === ''              // aucune affectation (strict: undefined = absent/BO/non-dispo)
+    }).length
 
     result[iso] = {
-      actual:   actTotal,
-      expected: expTotal,
-      diff:     actTotal - expTotal,
+      expected:   expTotal,    // cible forecast (PREV col G) — affiché en grand
+      actRun,                  // RUN affectés (hors BO)
+      shortfall,               // actRun - expected (0 = OK, négatif = manque)
+      extraBench,              // actives sans horaire (hors absences) — affiché en +N
       byShift: {
         matin: { actual: actual.matin, exp: expM  },
         midi:  { actual: actual.midi,  exp: expMi },
@@ -909,8 +927,8 @@ const etpStats = computed(() => {
 function etpCellStyle(iso) {
   const s = etpStats.value[iso]
   if (!s) return { background: 'var(--bg-surface)' }
-  if (s.diff >= 0) return { background: 'color-mix(in srgb, #22c55e 18%, var(--bg-surface))', color: '#22c55e' }
-  if (s.diff === -1) return { background: 'color-mix(in srgb, #f59e0b 22%, var(--bg-surface))', color: '#f59e0b' }
+  if (s.shortfall >= 0) return { background: 'color-mix(in srgb, #22c55e 18%, var(--bg-surface))', color: '#22c55e' }
+  if (s.shortfall === -1) return { background: 'color-mix(in srgb, #f59e0b 22%, var(--bg-surface))', color: '#f59e0b' }
   return { background: 'color-mix(in srgb, #ef4444 22%, var(--bg-surface))', color: '#ef4444' }
 }
 
@@ -918,13 +936,16 @@ function etpTitle(iso) {
   const s = etpStats.value[iso]
   if (!s) return 'Aucune prévision'
   const b = s.byShift
-  const sign = s.diff > 0 ? '+' : ''
+  const status = s.shortfall === 0 ? '✓ Objectif atteint'
+    : s.shortfall < 0 ? `⚠ Manque ${-s.shortfall} pers.`
+    : `+${s.shortfall} en surplus`
   return (
-    `ETP: ${s.actual} / ${s.expected} (${sign}${s.diff})\n` +
+    `ETP cible : ${s.expected}  |  RUN affectés : ${s.actRun}  (${status})\n` +
     `Mat ${b.matin.actual}/${b.matin.exp}  ` +
     `Mid ${b.midi.actual}/${b.midi.exp}  ` +
     `Apr ${b.aprem.actual}/${b.aprem.exp}  ` +
-    `Soi ${b.soir.actual}/${b.soir.exp}`
+    `Soi ${b.soir.actual}/${b.soir.exp}` +
+    (s.extraBench ? `\nBanc : ${s.extraBench} pers. actives sans horaire` : '')
   )
 }
 

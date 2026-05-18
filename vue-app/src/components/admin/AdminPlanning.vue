@@ -1,13 +1,36 @@
 <template>
   <div>
-    <!-- Navigation semaine -->
+    <!-- Navigation -->
     <div class="planning-nav" style="margin-bottom:8px">
-      <button class="btn-icon" @click="weekOffset--"><ChevronLeft :size="16" /></button>
-      <WeekPicker :week-offset="weekOffset" :week-dates="weekDates" @update:week-offset="weekOffset = $event" />
-      <button class="btn-icon" @click="weekOffset++"><ChevronRight :size="16" /></button>
-      <button class="btn-primary" style="font-size:0.8125rem;padding:6px 12px" @click="weekOffset = 0">
+
+      <!-- Contrôles semaine -->
+      <template v-if="viewMode === 'week'">
+        <button class="btn-icon" @click="weekOffset--"><ChevronLeft :size="16" /></button>
+        <WeekPicker :week-offset="weekOffset" :week-dates="weekDates" @update:week-offset="weekOffset = $event" />
+        <button class="btn-icon" @click="weekOffset++"><ChevronRight :size="16" /></button>
+      </template>
+
+      <!-- Contrôles mois -->
+      <template v-else>
+        <button class="btn-icon" @click="monthOffset--"><ChevronLeft :size="16" /></button>
+        <span class="month-nav-label">{{ monthNavLabel }}</span>
+        <button class="btn-icon" @click="monthOffset++"><ChevronRight :size="16" /></button>
+      </template>
+
+      <!-- Aujourd'hui (commun) -->
+      <button class="btn-primary" style="font-size:0.8125rem;padding:6px 12px"
+        @click="viewMode === 'week' ? weekOffset = 0 : monthOffset = 0">
         <CalendarCheck :size="12" /> Aujourd'hui
       </button>
+
+      <!-- Toggle Semaine / Mois -->
+      <div class="view-mode-toggle">
+        <button :class="['vm-btn', { 'vm-active': viewMode === 'week' }]" @click="viewMode = 'week'">Semaine</button>
+        <button :class="['vm-btn', { 'vm-active': viewMode === 'month' }]" @click="viewMode = 'month'">
+          <LayoutGrid :size="11" /> Mois
+        </button>
+      </div>
+
       <button
         class="btn-test-collection"
         :class="{ 'btn-test-active': admin.collectionName !== 'plannings' }"
@@ -24,6 +47,9 @@
       <FlaskConical :size="11" />
       Vous consultez <strong>plannings_test</strong> — les modifications ici n'affectent pas la production
     </div>
+
+    <!-- ══ Vue Semaine ══ -->
+    <template v-if="viewMode === 'week'">
 
     <!-- Cartes jours -->
     <div class="days-grid">
@@ -76,13 +102,11 @@
         </div>
       </div>
 
-      <!-- Chargement -->
       <div v-if="loadingDay" style="padding:24px;text-align:center;color:var(--text-muted)">
         Chargement du planning…
       </div>
 
       <template v-else>
-        <!-- Tableau des collaborateurs -->
         <div class="table-scroll-wrap">
         <table class="w-full" style="font-size:0.8125rem;min-width:520px">
           <thead>
@@ -106,14 +130,8 @@
               <td>
                 <div class="mini-timeline">
                   <template v-for="(block, i) in getTimelineBlocks(r.activites)" :key="i">
-                    <div
-                      v-if="block.empty"
-                      class="tl-gap"
-                      :style="{ width: block.width + '%' }"
-                    />
-                    <div
-                      v-else
-                      class="tl-block"
+                    <div v-if="block.empty" class="tl-gap" :style="{ width: block.width + '%' }" />
+                    <div v-else class="tl-block"
                       :style="{ width: block.width + '%', background: block.color }"
                       :title="block.label"
                     >
@@ -152,9 +170,87 @@
             </tr>
           </tbody>
         </table>
-        </div><!-- /table-scroll-wrap -->
+        </div>
       </template>
     </div>
+
+    </template><!-- fin vue semaine -->
+
+    <!-- ══ Vue Mois ══ -->
+    <template v-else>
+      <div class="month-matrix-outer">
+
+        <!-- Indicateur de chargement -->
+        <div v-if="monthLoading" class="month-loading-bar">
+          <span style="color:var(--text-muted);font-size:0.75rem">Chargement du mois…</span>
+        </div>
+
+        <div class="month-matrix-scroll">
+          <table class="month-matrix-table">
+            <colgroup>
+              <col style="width:160px;min-width:160px;max-width:160px">
+              <col v-for="iso in monthWorkDates" :key="iso" style="width:40px;min-width:40px;max-width:40px">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="mm-th-name">Collaborateur</th>
+                <th
+                  v-for="iso in monthWorkDates"
+                  :key="iso"
+                  class="mm-th-day"
+                  :class="{
+                    'mm-week-sep': monthWeekStarts.has(iso),
+                    'mm-th-sam':   monthSamedis.has(iso),
+                    'mm-th-ferie': monthFeries.has(iso),
+                  }"
+                >
+                  <div class="mm-dow" :class="`mm-dow-${getDow(iso).toLowerCase()}`">{{ getDow(iso) }}</div>
+                  <div class="mm-dm">{{ fmtDM(iso) }}</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="{ person, fullName } in monthPersonRows"
+                :key="person.id || fullName"
+              >
+                <td class="mm-td-name">
+                  <div style="display:flex;align-items:center;gap:6px;overflow:hidden">
+                    <div class="person-avatar" style="width:22px;height:22px;font-size:0.5rem;flex-shrink:0">
+                      {{ `${person.nom?.[0]??''}${person.prenom?.[0]??''}`.toUpperCase() }}
+                    </div>
+                    <span class="mm-person-name">{{ person.nom }} {{ person.prenom }}</span>
+                  </div>
+                </td>
+                <td
+                  v-for="iso in monthWorkDates"
+                  :key="iso"
+                  class="mm-cell"
+                  :class="{
+                    'mm-week-sep':  monthWeekStarts.has(iso),
+                    'mm-cell-sam':  monthSamedis.has(iso),
+                    'mm-cell-ferie':monthFeries.has(iso),
+                    'mm-inactive':  monthMatrix[fullName]?.[iso]?.inactive,
+                    'mm-cell-load': monthMatrix[fullName]?.[iso]?.loading,
+                  }"
+                  :style="monthMatrix[fullName]?.[iso]?.bg
+                    ? { background: monthMatrix[fullName][iso].bg, cursor: 'pointer' }
+                    : undefined"
+                  :title="`${fullName} · ${iso}`"
+                  @click="!monthMatrix[fullName]?.[iso]?.inactive && openMonthCell(fullName, iso)"
+                >
+                  <span
+                    v-if="monthMatrix[fullName]?.[iso]?.label"
+                    class="mm-cell-label"
+                    :style="{ color: monthMatrix[fullName][iso].color }"
+                  >{{ monthMatrix[fullName][iso].label }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </template><!-- fin vue mois -->
 
     <!-- Modal édition personne/jour -->
     <DayEditorModal
@@ -300,6 +396,129 @@
   .days-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* ── Toggle Semaine / Mois ── */
+.view-mode-toggle {
+  display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; flex-shrink: 0;
+}
+.vm-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 500;
+  border: none; background: transparent; color: var(--text-muted);
+  cursor: pointer; transition: background 0.13s, color 0.13s; white-space: nowrap;
+}
+.vm-btn:hover { background: var(--bg-hover); color: var(--text); }
+.vm-btn.vm-active { background: var(--accent-light); color: var(--accent); font-weight: 700; }
+
+/* ── Navigation mois ── */
+.month-nav-label {
+  font-size: 0.875rem; font-weight: 700;
+  min-width: 130px; text-align: center;
+}
+
+/* ── Matrice mois ── */
+.month-matrix-outer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.month-loading-bar {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.month-matrix-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.month-matrix-table {
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.mm-th-name, .mm-td-name {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.mm-th-name {
+  background: var(--bg-surface);
+  font-weight: 700; font-size: 0.6875rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--border);
+  z-index: 3;
+}
+.mm-th-day {
+  padding: 5px 2px; text-align: center;
+  background: var(--bg-surface);
+  border-bottom: 2px solid var(--border);
+  border-left: 1px solid transparent;
+  min-width: 40px;
+}
+.mm-dow {
+  font-size: 0.5625rem; font-weight: 700; text-transform: uppercase;
+  color: var(--text-muted); line-height: 1.2;
+}
+.mm-dow-lun { color: var(--accent); }
+.mm-dm {
+  font-size: 0.6875rem; font-weight: 600; color: var(--text);
+}
+.mm-week-sep { border-left: 2px solid var(--border) !important; }
+
+.mm-cell {
+  height: 28px; width: 40px; padding: 0;
+  text-align: center; vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid transparent;
+  cursor: pointer;
+  transition: filter 0.1s;
+}
+.mm-cell:hover:not(.mm-inactive):not(.mm-cell-load) { filter: brightness(0.88); }
+.mm-inactive { background: var(--bg-surface) !important; cursor: default; }
+.mm-cell-load { background: var(--bg-surface); }
+
+.mm-cell-label {
+  font-size: 0.5625rem; font-weight: 800;
+  letter-spacing: 0.01em; pointer-events: none;
+}
+.mm-person-name {
+  font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mm-td-name { border-bottom: 1px solid var(--border); }
+
+/* Lignes alternées */
+.month-matrix-table tbody tr:nth-child(even) .mm-td-name { background: var(--bg-surface); }
+
+/* Override règle globale .content-card tbody td:last-child qui force text-align:right */
+.month-matrix-table td:last-child,
+.month-matrix-table th:last-child {
+  text-align: center; font-family: inherit; font-size: inherit;
+  color: inherit; font-weight: inherit; padding: 0;
+}
+
+/* ── Samedis ── */
+.mm-th-sam {
+  background: color-mix(in srgb, var(--bg-surface) 85%, #94a3b8 15%);
+}
+.mm-dow-sam { color: #64748b !important; }
+.mm-cell-sam:not([style]) {
+  background: color-mix(in srgb, var(--bg-card) 80%, #94a3b8 20%);
+}
+
+/* ── Fériés ── */
+.mm-th-ferie {
+  background: color-mix(in srgb, var(--bg-surface) 80%, #f59e0b 20%);
+}
+.mm-th-ferie .mm-dow { color: #b45309 !important; }
+.mm-th-ferie .mm-dm  { color: #b45309 !important; }
+.mm-cell-ferie:not([style]) {
+  background: color-mix(in srgb, var(--bg-card) 75%, #fbbf24 25%);
+}
+.mm-cell-ferie.mm-cell-sam:not([style]) {
+  background: color-mix(in srgb, var(--bg-card) 70%, #f59e0b 30%);
+}
+
 /* ── Mode test ── */
 .btn-test-collection {
   display: inline-flex; align-items: center; gap: 5px;
@@ -326,15 +545,17 @@
 
 <script>
 import { ref } from 'vue'
-// Variable de module : persiste entre les changements d'onglets, réinitialisée au refresh
-const weekOffset = ref(0)
+// Variables de module : persistent entre les changements d'onglets, réinitialisées au refresh
+const weekOffset  = ref(0)
+const viewMode    = ref('week')   // 'week' | 'month'
+const monthOffset = ref(0)        // mois relatif au mois courant
 </script>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid,
 } from 'lucide-vue-next'
 import { useAdminStore } from '@/stores/adminStore'
 import { useUserStore } from '@/stores/userStore'
@@ -436,16 +657,31 @@ async function checkWeekStatus() {
   }
 }
 
-// Chargement initial : attend que le composant soit monté
+// Chargement initial
 onMounted(() => {
-  checkWeekStatus()
-  selectDay(weekDates.value[0])
+  if (viewMode.value === 'month') {
+    loadMonthData()
+  } else {
+    checkWeekStatus()
+    selectDay(weekDates.value[0])
+  }
 })
 
-// Changement de semaine : re-charge le statut et sélectionne le lundi
+// Changement de semaine (vue semaine uniquement)
 watch(weekDates, (newDates) => {
+  if (viewMode.value !== 'week') return
   checkWeekStatus()
   selectDay(newDates[0])
+})
+
+// Bascule vers la vue mois ou changement de mois
+watch([viewMode, monthOffset], ([mode], [prevMode]) => {
+  if (mode === 'month') {
+    loadMonthData()
+  } else if (prevMode === 'month') {
+    // Retour en vue semaine : recharge le statut de la semaine courante
+    checkWeekStatus()
+  }
 })
 
 /* ── Sélection d'un jour ── */
@@ -603,6 +839,196 @@ function applyActivitesToRessource(idPersonne, activites) {
 
 function fmtIso(date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+}
+
+/* ══════════════════════════════════════════════════════════
+   VUE MOIS
+   ══════════════════════════════════════════════════════════ */
+
+// Abréviations d'activités pour les cellules de la grille mois
+const CAT_SHORT = {
+  'Matin':        'Mat',
+  'Après-midi':   'Apm',
+  'Midi':         'Mid',
+  'Soir':         'Soi',
+  'TLT':          'TLT',
+  'BO':           'BO',
+  'PiloteBO':     'Pil',
+  'Pilote':       'Pil',
+  'Congés payés': 'CP',
+  'Indisponible': 'Ind',
+  'Récupération': 'Réc',
+  'Formation':    'For',
+}
+
+const DOW_SHORT = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+function getDow(iso)  { return DOW_SHORT[new Date(iso + 'T12:00:00').getDay()] }
+function fmtDM(iso)   { const d = new Date(iso + 'T12:00:00'); return `${d.getDate()}/${d.getMonth()+1}` }
+
+// Tous les jours lun–sam du mois (dimanches exclus, fériés et samedis inclus)
+const monthWorkDates = computed(() => {
+  const today = new Date()
+  const base  = new Date(today.getFullYear(), today.getMonth() + monthOffset.value, 1)
+  const y     = base.getFullYear()
+  const mo    = base.getMonth()
+  const dates = []
+  const d     = new Date(y, mo, 1)
+  while (d.getMonth() === mo) {
+    if (d.getDay() !== 0) dates.push(fmtIso(d)) // tout sauf dimanche
+    d.setDate(d.getDate() + 1)
+  }
+  return dates
+})
+
+// Sets pour le style des cellules
+const monthFeries  = computed(() => {
+  const set = new Set()
+  for (const iso of monthWorkDates.value) {
+    const d = new Date(iso + 'T12:00:00')
+    if (isFerie(d)) set.add(iso)
+  }
+  return set
+})
+const monthSamedis = computed(() => {
+  const set = new Set()
+  for (const iso of monthWorkDates.value) {
+    if (new Date(iso + 'T12:00:00').getDay() === 6) set.add(iso)
+  }
+  return set
+})
+
+const monthNavLabel = computed(() => {
+  const today = new Date()
+  const d = new Date(today.getFullYear(), today.getMonth() + monthOffset.value, 1)
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+})
+
+// Lundis du mois = séparateurs visuels de semaine
+const monthWeekStarts = computed(() => {
+  const set = new Set()
+  if (monthWorkDates.value.length) set.add(monthWorkDates.value[0]) // 1er jour toujours
+  for (const iso of monthWorkDates.value) {
+    if (new Date(iso + 'T12:00:00').getDay() === 1) set.add(iso)
+  }
+  return set
+})
+
+// Collaborateurs actifs au moins un jour dans le mois
+const monthPersons = computed(() => {
+  if (!userStore.users.length || !monthWorkDates.value.length) return []
+  const first = new Date(monthWorkDates.value[0] + 'T12:00:00')
+  const last  = new Date(monthWorkDates.value[monthWorkDates.value.length - 1] + 'T12:00:00')
+  return userStore.users
+    .filter(p => admin.isActiveOn(p, first) || admin.isActiveOn(p, last))
+    .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
+})
+
+const monthPersonRows = computed(() =>
+  monthPersons.value.map(p => ({ person: p, fullName: `${p.nom} ${p.prenom}` }))
+)
+
+// Données chargées pour le mois : { iso → { state, ressources, filledCount, total } }
+const monthData    = ref({})
+const monthLoading = ref(false)
+
+async function loadMonthData() {
+  const dates = monthWorkDates.value
+  if (!dates.length) return
+  monthLoading.value = true
+  // Pré-remplir en état "loading"
+  const loading = {}
+  for (const iso of dates) loading[iso] = { state: 'loading', ressources: [] }
+  monthData.value = loading
+  // Chargement parallèle
+  const results = await Promise.all(
+    dates.map(iso => {
+      const [y, m, d] = iso.split('-').map(Number)
+      return admin.loadDayPlanning(new Date(y, m - 1, d)).then(r => ({ iso, ...r }))
+    })
+  )
+  const newData = {}
+  for (const r of results) {
+    newData[r.iso] = {
+      state: 'loaded',
+      ressources:  r.ressources  || [],
+      filledCount: r.filledCount ?? 0,
+      total:       r.total       ?? 0,
+      exists:      r.exists,
+    }
+  }
+  monthData.value = newData
+  monthLoading.value = false
+}
+
+// Matrice calculée : { fullName → { iso → cellInfo } }
+const monthMatrix = computed(() => {
+  const m = {}
+  for (const { fullName, person } of monthPersonRows.value) {
+    m[fullName] = {}
+    for (const iso of monthWorkDates.value) {
+      const dayInfo = monthData.value[iso]
+      if (!dayInfo || dayInfo.state === 'loading') {
+        m[fullName][iso] = { loading: true }
+        continue
+      }
+      const date = new Date(iso + 'T12:00:00')
+      if (!admin.isActiveOn(person, date)) {
+        m[fullName][iso] = { inactive: true }
+        continue
+      }
+      const r = dayInfo.ressources?.find(r2 => `${r2.nom} ${r2.prenom}` === fullName)
+      if (!r || !r.activites?.some(a => a && a !== '')) {
+        m[fullName][iso] = { empty: true }
+        continue
+      }
+      // Activité dominante (slot le plus fréquent)
+      const counts = {}
+      for (const code of r.activites) {
+        if (code && code !== '') counts[code] = (counts[code] || 0) + 1
+      }
+      const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]
+      const mapping  = ACTIVITY_MAPPING[String(dominant)]
+      const cat      = mapping?.categorie || ''
+      const full     = mapping?.couleur || 'rgba(150,150,150,1)'
+      const bg       = full.replace(/,\s*1\s*\)$/, ', 0.5)')   // opacité réduite pour le fond
+      const label    = CAT_SHORT[cat] || cat.slice(0, 3) || '?'
+      m[fullName][iso] = { bg, color: contrastColor(bg), label }
+    }
+  }
+  return m
+})
+
+
+// Navigation : clic sur une cellule → passe en vue semaine sur ce jour
+function getMondayOfDate(date) {
+  const d   = new Date(date)
+  const day = d.getDay() === 0 ? 7 : d.getDay()
+  d.setDate(d.getDate() - day + 1)
+  return d
+}
+
+async function openMonthCell(fullName, iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  const date       = new Date(y, m - 1, d)
+
+  // Charge les données du jour
+  selectedDate.value = date
+  loadingDay.value   = true
+  dayData.value      = await admin.loadDayPlanning(date)
+  loadingDay.value   = false
+
+  // Trouve ou crée l'entrée pour cette personne
+  const person   = monthPersons.value.find(p => `${p.nom} ${p.prenom}` === fullName)
+  if (!person) return
+  const existing = dayData.value?.ressources?.find(r => `${r.nom} ${r.prenom}` === fullName)
+  const resource = existing ?? {
+    nom: person.nom, prenom: person.prenom,
+    idPersonne: person.id || person.uid,
+    activites: new Array(45).fill(''),
+  }
+
+  // Ouvre la modale d'édition
+  openDayEditor(resource)
 }
 
 function uidForId(idPersonne) {
