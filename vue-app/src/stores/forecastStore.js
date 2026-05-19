@@ -200,6 +200,84 @@ export function analyzeHistory(planningData) {
 }
 
 /* ============================================================
+   RATIO JOURNÉES VERTES (Agence) PAR PERSONNE
+   Fenêtre : max(arrivée, 1 an glissant) → hier
+   agenceRatio = agenceDays / totalActiveDays
+   Objectif : égaliser ce ratio entre tous les collabs.
+   Lors d'un surplus, ceux qui ont le ratio le plus élevé
+   (plus de jours Agence au compteur) partent en repos en premier,
+   pour laisser les autres cumuler davantage de jours Agence.
+   ============================================================ */
+
+const AGENCE_CATS = new Set(['Agence Matin', 'Agence Midi', 'Agence APREM', 'Agence Soir'])
+
+function fmtIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function countWorkingDays(start, end) {
+  let n = 0
+  const d = new Date(start); d.setHours(12, 0, 0, 0)
+  const e = new Date(end);   e.setHours(12, 0, 0, 0)
+  while (d <= e) {
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6 && !FERIES_FR.has(fmtIso(d))) n++
+    d.setDate(d.getDate() + 1)
+  }
+  return n
+}
+
+// Retourne { 'NOM Prenom': { totalActiveDays, agenceDays, agenceRatio } }
+function computePersonStats(planningData, persons) {
+  const today = new Date(); today.setHours(12, 0, 0, 0)
+  const oneYearAgo = new Date(today); oneYearAgo.setFullYear(today.getFullYear() - 1)
+  const yesterday  = new Date(today); yesterday.setDate(today.getDate() - 1)
+
+  const result = {}
+
+  for (const p of persons) {
+    const name = `${p.nom} ${p.prenom}`
+
+    // Fenêtre : max(date d'arrivée, 1 an glissant) → hier
+    let arrivee = null
+    if (p.arrivee) {
+      const parts = p.arrivee.trim().split(' ')
+      if (parts.length >= 3) {
+        arrivee = new Date(+parts[2], +parts[1] - 1, +parts[0])
+        arrivee.setHours(12, 0, 0, 0)
+      }
+    }
+    const windowStart = (arrivee && arrivee > oneYearAgo) ? arrivee : oneYearAgo
+
+    // Aucun historique pertinent si la fenêtre est dans le futur
+    if (windowStart > yesterday) {
+      result[name] = { totalActiveDays: 0, agenceDays: 0, agenceRatio: 0 }
+      continue
+    }
+
+    const totalActiveDays = countWorkingDays(windowStart, yesterday)
+    const startIso = fmtIso(windowStart)
+    const endIso   = fmtIso(yesterday)
+
+    // Compter les journées vertes (shifts Agence) dans la fenêtre
+    let agenceDays = 0
+    const pData = planningData[name] || {}
+    for (const [iso, entries] of Object.entries(pData)) {
+      if (iso < startIso || iso > endIso) continue
+      const dt = new Date(iso + 'T12:00:00')
+      if (dt.getDay() === 0 || dt.getDay() === 6 || FERIES_FR.has(iso)) continue
+      if (entries.some(e => AGENCE_CATS.has(e.categorie))) agenceDays++
+    }
+
+    const agenceRatio = totalActiveDays > 0 ? agenceDays / totalActiveDays : 0
+
+    result[name] = { totalActiveDays, agenceDays, agenceRatio }
+  }
+
+  return result
+}
+
+/* ============================================================
    ASSIGNATION HEBDOMADAIRE ÉQUITABLE
    ============================================================ */
 
@@ -439,7 +517,17 @@ export const useForecastStore = defineStore('forecast', () => {
     const lastWeekShift  = {}   // { name: fam } — pour l'équité inter-semaines
     const noAssignStreak = {}
     const boWeeksUsed    = {}
-    const monthRestDays  = {}   // { name: n } — jours vides cumulés sur le mois (équité)
+
+    // ── Stats historiques (visualisation uniquement — ne servent pas au tri) ──
+    const personStats   = computePersonStats(planningData, runPersons)
+
+    // ── Compteur jours Agence intra-calcul (round-robin équitable) ──
+    // Un slot vide dans le forecast = journée Agence en pratique.
+    // Tri primaire  : monthRestDays croissant → round-robin (1 Agence chacun avant 2)
+    // Tri secondaire : agenceRatio CROISSANT → à égalité, celui qui a le MOINS d'Agence
+    //   historiquement passe en premier (pour rattraper son retard et égaliser le ratio)
+    // Tri tertiaire : alphabétique pour la stabilité
+    const monthRestDays = {}   // { name: n } — jours Agence attribués dans ce calcul
 
     const sortedWeeks = Object.entries(weekGroups).sort(([a], [b]) => a.localeCompare(b))
 
@@ -502,16 +590,47 @@ export const useForecastStore = defineStore('forecast', () => {
         const dayFamilyMap = {}    // { iso: { name: fam } }
 
         for (const iso of workDates) {
-          const fc      = forecast.value[iso]
+          const fc       = forecast.value[iso]
           const dayNeeds = { matin: fc.matin, midi: fc.midi, aprem: fc.aprem, soir: fc.soir }
+          const totalNeeded = dayNeeds.matin + dayNeeds.midi + dayNeeds.aprem + dayNeeds.soir
 
-          // Pool du jour : disponibles, non absents aujourd'hui, non BO
+          // Pool du jour : disponibles, non absents, non BO
           const pool = available.filter(p => {
             const name = `${p.nom} ${p.prenom}`
             return !boNames.has(name) && !dayAbsences[name]?.[iso]
           })
 
-          dayFamilyMap[iso] = assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies)
+          // ── Rotation équitable des jours Agence (slots vides) ──
+          // Les CP / Indisponibles sont déjà exclus du pool en amont → aucun risque de conflit.
+          const surplus = pool.length - totalNeeded
+          let assignPool = pool
+
+          if (surplus > 0) {
+            const sorted = [...pool].sort((a, b) => {
+              const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
+              // 1. Moins de jours Agence ce calcul → passe en premier (round-robin)
+              const offDiff = (monthRestDays[na] || 0) - (monthRestDays[nb] || 0)
+              if (offDiff !== 0) return offDiff
+              // 2. Moins d'Agence historique → passe en premier (rattrapage du ratio)
+              const agenceDiff = (personStats[na]?.agenceRatio ?? 0) - (personStats[nb]?.agenceRatio ?? 0)
+              if (agenceDiff !== 0) return agenceDiff
+              // 3. Alphabétique pour la stabilité
+              return na.localeCompare(nb, 'fr')
+            })
+            const resting  = sorted.slice(0, surplus)
+            assignPool     = sorted.slice(surplus)
+
+            for (const p of resting) {
+              const name = `${p.nom} ${p.prenom}`
+              if (!matrix[name]) matrix[name] = {}
+              if (!matrix[name][iso]) {
+                matrix[name][iso] = ''
+                monthRestDays[name] = (monthRestDays[name] || 0) + 1
+              }
+            }
+          }
+
+          dayFamilyMap[iso] = assignShifts(assignPool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies)
 
           // Le 1er jour ouvré fixe la référence de cohérence pour le reste de la semaine
           if (iso === workDates[0]) {
@@ -575,87 +694,6 @@ export const useForecastStore = defineStore('forecast', () => {
           }
         }
 
-        // ── 6b. Rééquilibrage des jours vides ──
-        // Garantit max 2 jours sans horaire/semaine par personne.
-        // Quand quelqu'un dépasse ce seuil, on l'échange avec un collègue qui a travaillé
-        // tous les jours — en priorisant ceux qui ont eu le moins de jours off ce mois.
-        {
-          const MAX_EMPTY = 2
-
-          // Index : name → Set<iso vide>, iso → Set<name qui travaille>
-          const nameEmptyDays = {}
-          const isoWorkers    = {}
-
-          for (const iso of workDates) {
-            isoWorkers[iso] = new Set()
-            for (const p of available) {
-              const name  = `${p.nom} ${p.prenom}`
-              const shift = matrix[name]?.[iso]
-              if (shift === '')  (nameEmptyDays[name] ??= new Set()).add(iso)
-              else if (shift)    isoWorkers[iso].add(name)
-            }
-          }
-
-          // Personnes au-dessus du seuil (triées : les + reposés ce mois passent en premier
-          // pour que leur surplus soit corrigé en priorité)
-          const toBalance = [...Object.entries(nameEmptyDays)]
-            .filter(([, s]) => s.size > MAX_EMPTY)
-            .sort(([na], [nb]) => (monthRestDays[nb] || 0) - (monthRestDays[na] || 0))
-
-          for (const [nameA, emptySetA] of toBalance) {
-            const emptyA = [...emptySetA]
-            const excess = emptyA.length - MAX_EMPTY
-
-            // Répartir les jours à remplir uniformément dans la semaine
-            const toFill = []
-            for (let i = 0; i < excess; i++) {
-              const idx = excess === 1
-                ? Math.floor(emptyA.length / 2)
-                : Math.round(i * (emptyA.length - 1) / (excess - 1))
-              if (!toFill.includes(emptyA[idx])) toFill.push(emptyA[idx])
-            }
-
-            const personA = available.find(p => `${p.nom} ${p.prenom}` === nameA)
-
-            for (const iso of toFill) {
-              if (!emptySetA.has(iso)) continue  // déjà comblé par un échange précédent
-
-              // Partenaire : travaille ce jour, pas encore trop de repos cette semaine,
-              // et en priorité celui qui a eu le moins de jours off ce mois
-              const partner = [...isoWorkers[iso]]
-                .filter(nameB => (nameEmptyDays[nameB]?.size || 0) < MAX_EMPTY)
-                .sort((na, nb) => (monthRestDays[na] || 0) - (monthRestDays[nb] || 0))
-              [0]
-
-              if (!partner) continue
-
-              // Récupère le shift du partenaire ; si A ne peut pas faire de TLT, convertir
-              let shiftB = matrix[partner][iso]
-              if (personA?.peutTLT === false && typeof shiftB === 'string' && shiftB.startsWith('TLT ')) {
-                const famKey = Object.entries(TLT_VARIANT).find(([, tlt]) => tlt === shiftB)?.[0]
-                shiftB = famKey ? SITE_NAME[famKey] : shiftB
-              }
-
-              // Échange dans la matrice
-              matrix[nameA][iso]  = shiftB
-              matrix[partner][iso] = ''
-
-              // Mise à jour des sets
-              emptySetA.delete(iso)
-              ;(nameEmptyDays[partner] ??= new Set()).add(iso)
-              isoWorkers[iso].add(nameA)
-              isoWorkers[iso].delete(partner)
-            }
-          }
-
-          // Compteur mensuel de jours vides (pour équité inter-semaines)
-          for (const p of available) {
-            const name = `${p.nom} ${p.prenom}`
-            if (!boNames.has(name))
-              monthRestDays[name] = (monthRestDays[name] || 0) + (nameEmptyDays[name]?.size || 0)
-          }
-        }
-
         // ── 7. Mise à jour historique inter-semaines ──
         // On comptabilise le shift dominant réellement attribué cette semaine
         const weekCounts = {}   // { name: { fam: n } }
@@ -697,6 +735,7 @@ export const useForecastStore = defineStore('forecast', () => {
           )
         )
       ),
+      personStats,  // { 'NOM Prenom': { totalActiveDays, workedDays, absenceDays, offDays, offRatio } }
     }
 
     previewing.value = false

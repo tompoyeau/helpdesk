@@ -241,12 +241,13 @@
               <BarChart2 :size="13" />
               Répartition historique
             </div>
-            <div class="equity-subtitle">Avant ce forecast</div>
+            <div class="equity-subtitle">Avant ce forecast · 12 mois glissants · Agence = jour off</div>
 
             <div class="equity-list">
               <div v-for="person in fc.preview.persons" :key="person" class="equity-row">
                 <div class="eq-name">{{ person }}</div>
                 <div class="eq-bars">
+                  <!-- Shifts matin/midi/aprem/soir -->
                   <div
                     v-for="shift in ['matin','midi','aprem','soir']"
                     :key="shift"
@@ -262,6 +263,21 @@
                     ></div>
                     <span class="eq-bar-val">{{ getHistPct(person, shift) }}%</span>
                   </div>
+
+                  <!-- Ratio journées vertes (Agence) -->
+                  <div
+                    class="eq-bar-wrap eq-bar-agence-wrap"
+                    :title="`Journées Agence : ${getAgenceDays(person)} / ${getTotalActiveDays(person)} jours actifs (${getAgencePct(person)}%)`"
+                  >
+                    <div
+                      class="eq-bar eq-bar-agence"
+                      :style="{ width: Math.min(getAgencePct(person), 100) + '%' }"
+                    ></div>
+                    <span class="eq-bar-val eq-bar-agence-val">
+                      {{ getAgencePct(person) }}%
+                      <span class="eq-agence-detail">({{ getAgenceDays(person) }}j / {{ getTotalActiveDays(person) }}j)</span>
+                    </span>
+                  </div>
                 </div>
                 <div class="eq-total">{{ getHistTotal(person) }}s</div>
               </div>
@@ -275,6 +291,10 @@
               >
                 <span class="eq-dot" :style="{ background: SHIFT_COLORS[SITE_NAME[shift]]?.text }"></span>
                 {{ SITE_NAME[shift] }}
+              </span>
+              <span class="eq-legend-item eq-legend-agence">
+                <span class="eq-dot" style="background:#65a30d"></span>
+                Agence
               </span>
             </div>
           </div>
@@ -593,8 +613,15 @@
 .eq-bar-val { font-size: 0.5625rem; color: var(--text-muted); min-width: 24px; }
 .eq-total { font-size: 0.5625rem; color: var(--text-subtle); white-space: nowrap; }
 
+/* Barre journées vertes (Agence) */
+.eq-bar-agence-wrap { margin-top: 3px; border-top: 1px solid var(--border); padding-top: 3px; }
+.eq-bar-agence { background: #65a30d; max-width: 60px; }
+.eq-bar-agence-val { color: #3f6212 !important; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+.eq-agence-detail { font-size: 0.5rem; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
+
 .equity-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .eq-legend-item { display: flex; align-items: center; gap: 3px; font-size: 0.5625rem; font-weight: 600; }
+.eq-legend-agence { color: #3f6212; }
 .eq-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 
 /* ── Popup édition cellule ── */
@@ -960,5 +987,16 @@ function getHistPct(person, shift) {
   const total = getHistTotal(person)
   if (!total) return 0
   return Math.round(getHistStat(person, shift) / total * 100)
+}
+
+/* ── Ratio journées vertes (Agence) ── */
+function getAgenceDays(person) {
+  return fc.preview?.personStats?.[person]?.agenceDays ?? 0
+}
+function getTotalActiveDays(person) {
+  return fc.preview?.personStats?.[person]?.totalActiveDays ?? 0
+}
+function getAgencePct(person) {
+  return Math.round((fc.preview?.personStats?.[person]?.agenceRatio ?? 0) * 100)
 }
 </script>
