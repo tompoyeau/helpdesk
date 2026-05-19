@@ -439,6 +439,7 @@ export const useForecastStore = defineStore('forecast', () => {
     const lastWeekShift  = {}   // { name: fam } — pour l'équité inter-semaines
     const noAssignStreak = {}
     const boWeeksUsed    = {}
+    const monthRestDays  = {}   // { name: n } — jours vides cumulés sur le mois (équité)
 
     const sortedWeeks = Object.entries(weekGroups).sort(([a], [b]) => a.localeCompare(b))
 
@@ -571,6 +572,87 @@ export const useForecastStore = defineStore('forecast', () => {
             const fam = dayFamilyMap[iso]?.[name]
             if (!fam) { matrix[name][iso] = ''; continue }
             matrix[name][iso] = tltDays.has(`${name}|${iso}`) ? TLT_VARIANT[fam] : SITE_NAME[fam]
+          }
+        }
+
+        // ── 6b. Rééquilibrage des jours vides ──
+        // Garantit max 2 jours sans horaire/semaine par personne.
+        // Quand quelqu'un dépasse ce seuil, on l'échange avec un collègue qui a travaillé
+        // tous les jours — en priorisant ceux qui ont eu le moins de jours off ce mois.
+        {
+          const MAX_EMPTY = 2
+
+          // Index : name → Set<iso vide>, iso → Set<name qui travaille>
+          const nameEmptyDays = {}
+          const isoWorkers    = {}
+
+          for (const iso of workDates) {
+            isoWorkers[iso] = new Set()
+            for (const p of available) {
+              const name  = `${p.nom} ${p.prenom}`
+              const shift = matrix[name]?.[iso]
+              if (shift === '')  (nameEmptyDays[name] ??= new Set()).add(iso)
+              else if (shift)    isoWorkers[iso].add(name)
+            }
+          }
+
+          // Personnes au-dessus du seuil (triées : les + reposés ce mois passent en premier
+          // pour que leur surplus soit corrigé en priorité)
+          const toBalance = [...Object.entries(nameEmptyDays)]
+            .filter(([, s]) => s.size > MAX_EMPTY)
+            .sort(([na], [nb]) => (monthRestDays[nb] || 0) - (monthRestDays[na] || 0))
+
+          for (const [nameA, emptySetA] of toBalance) {
+            const emptyA = [...emptySetA]
+            const excess = emptyA.length - MAX_EMPTY
+
+            // Répartir les jours à remplir uniformément dans la semaine
+            const toFill = []
+            for (let i = 0; i < excess; i++) {
+              const idx = excess === 1
+                ? Math.floor(emptyA.length / 2)
+                : Math.round(i * (emptyA.length - 1) / (excess - 1))
+              if (!toFill.includes(emptyA[idx])) toFill.push(emptyA[idx])
+            }
+
+            const personA = available.find(p => `${p.nom} ${p.prenom}` === nameA)
+
+            for (const iso of toFill) {
+              if (!emptySetA.has(iso)) continue  // déjà comblé par un échange précédent
+
+              // Partenaire : travaille ce jour, pas encore trop de repos cette semaine,
+              // et en priorité celui qui a eu le moins de jours off ce mois
+              const partner = [...isoWorkers[iso]]
+                .filter(nameB => (nameEmptyDays[nameB]?.size || 0) < MAX_EMPTY)
+                .sort((na, nb) => (monthRestDays[na] || 0) - (monthRestDays[nb] || 0))
+              [0]
+
+              if (!partner) continue
+
+              // Récupère le shift du partenaire ; si A ne peut pas faire de TLT, convertir
+              let shiftB = matrix[partner][iso]
+              if (personA?.peutTLT === false && typeof shiftB === 'string' && shiftB.startsWith('TLT ')) {
+                const famKey = Object.entries(TLT_VARIANT).find(([, tlt]) => tlt === shiftB)?.[0]
+                shiftB = famKey ? SITE_NAME[famKey] : shiftB
+              }
+
+              // Échange dans la matrice
+              matrix[nameA][iso]  = shiftB
+              matrix[partner][iso] = ''
+
+              // Mise à jour des sets
+              emptySetA.delete(iso)
+              ;(nameEmptyDays[partner] ??= new Set()).add(iso)
+              isoWorkers[iso].add(nameA)
+              isoWorkers[iso].delete(partner)
+            }
+          }
+
+          // Compteur mensuel de jours vides (pour équité inter-semaines)
+          for (const p of available) {
+            const name = `${p.nom} ${p.prenom}`
+            if (!boNames.has(name))
+              monthRestDays[name] = (monthRestDays[name] || 0) + (nameEmptyDays[name]?.size || 0)
           }
         }
 
