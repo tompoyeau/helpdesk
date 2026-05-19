@@ -560,7 +560,8 @@ export const useForecastStore = defineStore('forecast', () => {
       }
 
       // ── 2. Pool disponible (toutes les personnes actives, les absences sont gérées jour par jour) ──
-      const available = activePeople
+      const available    = activePeople
+      const weekRestDays = {}   // { name: n } — jours Agence/vides cette semaine (max 2)
 
       // ── 3. Attribution BO (hebdomadaire, par rotation équitable) ──
       const boNames = new Set()
@@ -601,14 +602,19 @@ export const useForecastStore = defineStore('forecast', () => {
           })
 
           // ── Rotation équitable des jours Agence (slots vides) ──
+          // Limite : 2 jours vides max par personne par semaine.
           // Les CP / Indisponibles sont déjà exclus du pool en amont → aucun risque de conflit.
           const surplus = pool.length - totalNeeded
           let assignPool = pool
 
           if (surplus > 0) {
-            const sorted = [...pool].sort((a, b) => {
+            // Seuls ceux qui n'ont pas encore atteint 2 jours vides cette semaine sont éligibles
+            const restEligible = pool.filter(p => (weekRestDays[`${p.nom} ${p.prenom}`] || 0) < 2)
+            const restCount    = Math.min(surplus, restEligible.length)
+
+            const sorted = [...restEligible].sort((a, b) => {
               const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
-              // 1. Moins de jours Agence ce calcul → passe en premier (round-robin)
+              // 1. Moins de jours Agence ce calcul → passe en premier (round-robin mensuel)
               const offDiff = (monthRestDays[na] || 0) - (monthRestDays[nb] || 0)
               if (offDiff !== 0) return offDiff
               // 2. Moins d'Agence historique → passe en premier (rattrapage du ratio)
@@ -617,8 +623,10 @@ export const useForecastStore = defineStore('forecast', () => {
               // 3. Alphabétique pour la stabilité
               return na.localeCompare(nb, 'fr')
             })
-            const resting  = sorted.slice(0, surplus)
-            assignPool     = sorted.slice(surplus)
+
+            const resting     = sorted.slice(0, restCount)
+            const restingNames = new Set(resting.map(p => `${p.nom} ${p.prenom}`))
+            assignPool        = pool.filter(p => !restingNames.has(`${p.nom} ${p.prenom}`))
 
             for (const p of resting) {
               const name = `${p.nom} ${p.prenom}`
@@ -626,6 +634,7 @@ export const useForecastStore = defineStore('forecast', () => {
               if (!matrix[name][iso]) {
                 matrix[name][iso] = ''
                 monthRestDays[name] = (monthRestDays[name] || 0) + 1
+                weekRestDays[name]  = (weekRestDays[name]  || 0) + 1
               }
             }
           }
