@@ -62,6 +62,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
+import { computePersonStats, countCatDays } from '@/stores/statsStore'
 
 const props  = defineProps({ catName: { type: String, required: true } })
 const data   = useDataStore()
@@ -69,13 +70,13 @@ const router = useRouter()
 
 /* ── Catégories consolidées ── */
 const CONSOLIDATED = {
-  CONS_MATIN:  { label: 'Matin',           cats: ['Matin', 'TLT Matin', 'TLT Agence Matin'],                           subtypes: { 'Client': ['Matin'],  'TLT Domicile': ['TLT Matin'],  'TLT Agence': ['TLT Agence Matin']  } },
-  CONS_MIDI:   { label: 'Midi',            cats: ['Midi',  'TLT Midi',  'TLT Agence Midi'],                            subtypes: { 'Client': ['Midi'],   'TLT Domicile': ['TLT Midi'],   'TLT Agence': ['TLT Agence Midi']   } },
-  CONS_APREM:  { label: 'Aprem',           cats: ['Aprem', 'TLT APREM', 'TLT Agence APREM'],                           subtypes: { 'Client': ['Aprem'],  'TLT Domicile': ['TLT APREM'],  'TLT Agence': ['TLT Agence APREM']  } },
-  CONS_SOIR:   { label: 'Soir',            cats: ['Soir',  'TLT Soir',  'TLT Agence Soir'],                            subtypes: { 'Client': ['Soir'],   'TLT Domicile': ['TLT Soir'],   'TLT Agence': ['TLT Agence Soir']   } },
-  CONS_AGENCE: { label: 'Journées vertes', cats: ['Agence Matin','Agence Midi','Agence APREM','Agence Soir'], subtypes: null },
+  CONS_MATIN:  { label: 'Matin',           getDays: s => s.detail.matin.site + s.detail.matin.tlt,  getSub: s => ({ 'Client': s.detail.matin.site, 'TLT': s.detail.matin.tlt }) },
+  CONS_MIDI:   { label: 'Midi',            getDays: s => s.detail.midi.site  + s.detail.midi.tlt,   getSub: s => ({ 'Client': s.detail.midi.site,  'TLT': s.detail.midi.tlt  }) },
+  CONS_APREM:  { label: 'Aprem',           getDays: s => s.detail.aprem.site + s.detail.aprem.tlt,  getSub: s => ({ 'Client': s.detail.aprem.site, 'TLT': s.detail.aprem.tlt }) },
+  CONS_SOIR:   { label: 'Soir',            getDays: s => s.detail.soir.site  + s.detail.soir.tlt,   getSub: s => ({ 'Client': s.detail.soir.site,  'TLT': s.detail.soir.tlt  }) },
+  CONS_AGENCE: { label: 'Journées vertes', getDays: s => s.agenceDays,                              getSub: null },
 }
-const SUBTYPE_COLORS = { 'Client': '#6366F1', 'TLT Domicile': '#22D3EE', 'TLT Agence': '#A78BFA' }
+const SUBTYPE_COLORS = { 'Client': '#6366F1', 'TLT': '#22D3EE' }
 
 const isConsolidated = computed(() => props.catName in CONSOLIDATED)
 const isSamedi       = computed(() => props.catName === 'samedi')
@@ -101,39 +102,30 @@ const personRows = computed(() => {
       .sort(([, a], [, b]) => b - a)
   }
 
-  // Catégorie consolidée
+  const win = {
+    startIso: data.filterStart || '2000-01-01',
+    endIso:   data.filterEnd   || new Date().toISOString().slice(0, 10),
+  }
+
+  // Catégorie consolidée — via computePersonStats
   if (isConsolidated.value) {
-    const { cats, subtypes } = CONSOLIDATED[props.catName]
+    const { getDays, getSub } = CONSOLIDATED[props.catName]
     const arr = []
-    for (const p in data.filtered.byPerson) {
-      let days = 0
-      const sub = subtypes ? Object.fromEntries(Object.keys(subtypes).map(k => [k, 0])) : null
-      for (const day in data.filtered.byPerson[p].details) {
-        const entries = data.filtered.byPerson[p].details[day]
-        const count   = entries.filter(e => cats.includes(e.categorie)).length
-        if (count === 1) days += 0.5
-        if (count >= 2)  days += 1
-        if (subtypes) {
-          for (const [type, typeCats] of Object.entries(subtypes)) {
-            const tc = entries.filter(e => typeCats.includes(e.categorie)).length
-            if (tc === 1) sub[type] += 0.5
-            else if (tc >= 2) sub[type] += 1
-          }
-        }
-      }
-      if (days > 0) arr.push([p, days, sub])
+    for (const name of data.activePersons()) {
+      const s    = computePersonStats(data.planning, name, win)
+      const days = getDays(s)
+      if (days <= 0) continue
+      arr.push([name, Math.round(days * 10) / 10, getSub ? getSub(s) : null])
     }
     return arr.sort(([, a], [, b]) => b - a)
   }
 
   // Catégorie normale
-  return Object.entries(data.filtered.byPerson)
-    .map(([person, d]) => {
-      const days = new Set()
-      for (const day in d.details)
-        d.details[day].forEach(e => { if (e.categorie === props.catName) days.add(day) })
-      return [person, days.size, null]
-    })
+  return data.activePersons().map(name => [
+    name,
+    countCatDays(data.planning, name, props.catName, win),
+    null,
+  ])
     .filter(([, v]) => v > 0)
     .sort(([, a], [, b]) => b - a)
 })

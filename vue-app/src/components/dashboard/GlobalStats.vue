@@ -143,6 +143,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
+import { computePersonStats, computeTeamStats } from '@/stores/statsStore'
 
 const data   = useDataStore()
 const router = useRouter()
@@ -169,28 +170,34 @@ function setSort(key) {
   }
 }
 
-/* ── Catégories ── */
-const TLT_CATS  = new Set(['TLT Matin','TLT Midi','TLT APREM','TLT Soir','TLT Agence Matin','TLT Agence Midi','TLT Agence APREM','TLT Agence Soir','ApremRenf'])
-const CLI_CATS  = new Set(['Matin','Midi','Aprem','Soir','Formation','PiloteBO'])
-const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, 'Agence Matin','Agence Midi','Agence APREM','Agence Soir','Pilote','PiloteBO','MatinW11','SoirW11','Astreinte'])
-const CP_CATS   = new Set(['CP'])
+/* ── Fenêtre temporelle (header) ── */
+const win = computed(() => ({
+  startIso: data.filterStart || '2000-01-01',
+  endIso:   data.filterEnd   || new Date().toISOString().slice(0, 10),
+}))
 
-/* ── KPIs globaux ── */
+/* ── Stats par collaborateur via statsStore ── */
+const personStatsList = computed(() => {
+  const w = win.value
+  return data.activePersons().map(name => ({
+    name,
+    s: computePersonStats(data.planning, name, w),
+  }))
+})
+
+/* ── Stats équipe (KPIs) ── */
+const teamStats = computed(() => computeTeamStats(personStatsList.value.map(p => p.s)))
+
 const kpis = computed(() => {
-  if (!data.filtered) return { nbPersons: 0, totalWorkDays: 0, tauxTlt: 0 }
-  let totalWorkDays = 0, tltDays = 0
-  const personSet = new Set()
-  for (const p in data.filtered.byPerson) {
-    for (const day in data.filtered.byPerson[p].details) {
-      const entries = data.filtered.byPerson[p].details[day]
-      const hasWork = entries.some(e => WORK_CATS.has(e.categorie))
-      const hasTlt  = entries.some(e => TLT_CATS.has(e.categorie))
-      if (hasWork) { totalWorkDays++; personSet.add(p) }
-      if (hasTlt)  tltDays++
-    }
+  if (data.loading) return { nbPersons: 0, totalWorkDays: 0, tauxTlt: 0 }
+  const team = teamStats.value
+  if (!team) return { nbPersons: 0, totalWorkDays: 0, tauxTlt: 0 }
+  const nbPersons = personStatsList.value.filter(p => p.s.workDays > 0).length
+  return {
+    nbPersons,
+    totalWorkDays: Math.round(team.workDays),
+    tauxTlt:       team.tauxTlt,
   }
-  const tauxTlt = totalWorkDays > 0 ? Math.round(tltDays / totalWorkDays * 100) : 0
-  return { nbPersons: personSet.size, totalWorkDays, tauxTlt }
 })
 
 const tltColor = computed(() => {
@@ -205,41 +212,14 @@ const periode = computed(() => {
   return `${fmt(fs)} → ${fmt(fe)}`
 })
 
-/* ── Helpers partagés avec PersonDetail ── */
-// ≥23 créneaux sur 45 = journée complète, sinon demi-journée
-const slotsToDay = slots => slots >= 23 ? 1 : slots > 0 ? 0.5 : 0
-// 1 bloc d'activité = 0.5j, 2+ blocs = 1j
-const toDay = c => c === 1 ? 0.5 : c >= 2 ? 1 : 0
-
-/* ── Stats par collaborateur (même logique que PersonDetail) ── */
-function getPersonStat(person, type) {
-  const d = data.filtered?.byPerson[person]
-  if (!d) return 0
-  let total = 0
-  for (const day in d.details) {
-    const entries = d.details[day]
-    if (type === 'cp') {
-      // CP : basé sur les slots réels pour distinguer journée complète / demi-journée
-      const cpSlots = entries
-        .filter(e => e.categorie === 'CP')
-        .reduce((s, e) => s + (e.slots || 0), 0)
-      total += slotsToDay(cpSlots)
-    } else {
-      const CATS = type === 'work' ? WORK_CATS : type === 'tlt' ? TLT_CATS : CLI_CATS
-      total += toDay(entries.filter(e => CATS.has(e.categorie)).length)
-    }
-  }
-  return Number.isInteger(total) ? total : +total.toFixed(1)
-}
-
 /* ── Liste triée ── */
 const sortedPersons = computed(() => {
-  const persons = data.activePersons().map(name => ({
+  const persons = personStatsList.value.map(({ name, s }) => ({
     name,
-    work:   getPersonStat(name, 'work'),
-    tlt:    getPersonStat(name, 'tlt'),
-    client: getPersonStat(name, 'client'),
-    cp:     getPersonStat(name, 'cp'),
+    work:   s.workDays,
+    tlt:    s.tltDays,
+    client: s.siteDays,
+    cp:     s.cpDays,
   }))
 
   return persons.sort((a, b) => {

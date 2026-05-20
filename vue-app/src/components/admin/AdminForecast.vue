@@ -212,8 +212,15 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="person in fc.preview.persons" :key="person">
-                    <td class="td-name">{{ person }}</td>
+                  <tr
+                    v-for="person in fc.preview.persons"
+                    :key="person"
+                    :class="{ 'tr-fixed': fc.preview.fixedPersons?.has(person) }"
+                  >
+                    <td class="td-name">
+                      <span v-if="fc.preview.fixedPersons?.has(person)" class="td-fixed-badge" title="Ressource fixe — non modifiable">⚓</span>
+                      {{ person }}
+                    </td>
                     <td
                       v-for="iso in visibleDates"
                       :key="iso"
@@ -222,10 +229,13 @@
                         'td-lundi':   viewMode === 'month' && weekStarts.has(iso),
                         'td-edited':  isEdited(person, iso),
                         'td-editing': editCell?.person === person && editCell?.iso === iso,
+                        'td-fixed':   fc.preview.fixedPersons?.has(person),
                       }"
                       :style="cellStyle(fc.preview.matrix[person]?.[iso])"
-                      :title="(fc.preview.matrix[person]?.[iso] || 'Non affecté') + ' · Cliquer pour modifier'"
-                      @click.stop="openEdit(person, iso, $event)"
+                      :title="fc.preview.fixedPersons?.has(person)
+                        ? (fc.preview.matrix[person]?.[iso] || 'Non affecté') + ' · Ressource fixe'
+                        : (fc.preview.matrix[person]?.[iso] || 'Non affecté') + ' · Cliquer pour modifier'"
+                      @click.stop="!fc.preview.fixedPersons?.has(person) && openEdit(person, iso, $event)"
                     >
                       {{ SHIFT_SHORT[fc.preview.matrix[person]?.[iso] || ''] ?? '—' }}
                     </td>
@@ -244,7 +254,7 @@
             <div class="equity-subtitle">Avant ce forecast · 12 mois glissants · Agence = jour off</div>
 
             <div class="equity-list">
-              <div v-for="person in fc.preview.persons" :key="person" class="equity-row">
+              <div v-for="person in fc.preview.persons.filter(p => !fc.preview.fixedPersons?.has(p))" :key="person" class="equity-row">
                 <div class="eq-name">{{ person }}</div>
                 <div class="eq-bars">
                   <!-- Shifts matin/midi/aprem/soir -->
@@ -302,6 +312,83 @@
         </div>
       </template>
     </template>
+
+  <!-- ── Modale répartition globale ── -->
+  <teleport to="body">
+    <div v-if="showEquityModal" class="eq-modal-backdrop" @click.self="showEquityModal = false">
+      <div class="eq-modal">
+
+        <!-- Header -->
+        <div class="eq-modal-head">
+          <div>
+            <h3 style="margin:0 0 2px;font-size:0.9375rem;font-weight:700">Répartition des équipes</h3>
+            <span style="font-size:0.6875rem;color:var(--text-muted)">
+              12 mois glissants · {{ monthLabel }} · {{ equityPersons.length }} collaborateurs
+            </span>
+          </div>
+          <button class="btn-icon" @click="showEquityModal = false"><X :size="14" /></button>
+        </div>
+
+        <!-- Table -->
+        <div class="eq-modal-scroll">
+          <table class="eq-modal-table">
+            <thead>
+              <tr>
+                <th class="eqt-th eqt-name" @click="toggleSort('nom')">
+                  Collaborateur <span class="sort-arrow">{{ sortArrow('nom') }}</span>
+                </th>
+                <th class="eqt-th" @click="toggleSort('total')">
+                  Semaines <span class="sort-arrow">{{ sortArrow('total') }}</span>
+                </th>
+                <th v-for="s in ['matin','midi','aprem','soir']" :key="s" class="eqt-th" @click="toggleSort(s)">
+                  {{ SITE_NAME[s] }} <span class="sort-arrow">{{ sortArrow(s) }}</span>
+                </th>
+                <th class="eqt-th eqt-agence" @click="toggleSort('agence')">
+                  Agence <span class="sort-arrow">{{ sortArrow('agence') }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="person in equityPersonsSorted" :key="person" class="eqt-row">
+
+                <!-- Nom -->
+                <td class="eqt-name">{{ person }}</td>
+
+                <!-- Total semaines -->
+                <td class="eqt-num">{{ getHistTotal(person) }}s</td>
+
+                <!-- Shift bars -->
+                <td v-for="s in ['matin','midi','aprem','soir']" :key="s" class="eqt-bar-cell">
+                  <div class="eqt-bar-wrap">
+                    <div
+                      class="eqt-bar"
+                      :style="{
+                        width: getHistPct(person, s) + '%',
+                        background: SHIFT_COLORS[SITE_NAME[s]]?.text
+                      }"
+                    ></div>
+                    <span class="eqt-pct">{{ getHistPct(person, s) }}%</span>
+                    <span class="eqt-abs">({{ getHistStat(person, s) }}s)</span>
+                  </div>
+                </td>
+
+                <!-- Agence ratio -->
+                <td class="eqt-bar-cell eqt-agence">
+                  <div class="eqt-bar-wrap">
+                    <div class="eqt-bar eqt-bar-green" :style="{ width: Math.min(getAgencePct(person), 100) + '%' }"></div>
+                    <span class="eqt-pct eqt-pct-green">{{ getAgencePct(person) }}%</span>
+                    <span class="eqt-abs">({{ getAgenceDays(person) }}j / {{ getTotalActiveDays(person) }}j)</span>
+                  </div>
+                </td>
+
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </teleport>
 
   <!-- ── Popup édition cellule ── -->
   <div
@@ -581,7 +668,10 @@
 /* Override règle globale .content-card tbody td:last-child qui force text-align:right */
 .matrix-table td:last-child,
 .matrix-table th:last-child { text-align: center; font-family: inherit; font-size: 0.625rem; color: inherit; font-weight: 700; padding: 4px 2px; }
-.td-cell:hover { filter: brightness(1.25); }
+.td-cell:hover:not(.td-fixed) { filter: brightness(1.25); }
+.td-fixed { cursor: default !important; }
+.tr-fixed .td-name { background: color-mix(in srgb, var(--bg-card) 85%, var(--accent) 15%); }
+.td-fixed-badge { font-size: 0.55rem; margin-right: 3px; opacity: 0.6; }
 .td-lundi   { border-left: 2px solid var(--border) !important; }
 .td-editing { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; position: relative; }
 .td-edited  { outline: 1px dashed var(--accent); outline-offset: -1px; }
@@ -623,6 +713,63 @@
 .eq-legend-item { display: flex; align-items: center; gap: 3px; font-size: 0.5625rem; font-weight: 600; }
 .eq-legend-agence { color: #3f6212; }
 .eq-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Bouton répartition ── */
+.btn-equity {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-muted); font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-equity:hover { background: var(--bg-hover); color: var(--text); }
+
+/* ── Modale répartition ── */
+.eq-modal-backdrop {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.eq-modal {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+  width: 100%; max-width: 1100px; max-height: 85vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.eq-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.eq-modal-scroll { overflow: auto; flex: 1; }
+
+/* ── Table équité ── */
+.eq-modal-table {
+  width: 100%; border-collapse: collapse; font-size: 0.75rem;
+}
+.eq-modal-table thead { position: sticky; top: 0; z-index: 2; }
+.eqt-th {
+  padding: 10px 16px; text-align: left; font-size: 0.6875rem; font-weight: 700;
+  color: var(--text-muted); background: var(--bg-surface);
+  border-bottom: 2px solid var(--border); cursor: pointer; white-space: nowrap;
+  user-select: none;
+}
+.eqt-th:hover { color: var(--text); }
+.eqt-row { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+.eqt-row:hover { background: var(--bg-hover); }
+.eqt-name { padding: 10px 16px; font-weight: 600; white-space: nowrap; min-width: 160px; }
+.eqt-num  { padding: 10px 12px; text-align: center; color: var(--text-muted); font-size: 0.6875rem; white-space: nowrap; }
+.eqt-bar-cell { padding: 8px 16px; min-width: 160px; }
+.eqt-agence { min-width: 180px; }
+.eqt-bar-wrap { display: flex; align-items: center; gap: 6px; }
+.eqt-bar {
+  height: 8px; border-radius: 4px; min-width: 2px; max-width: 80px;
+  transition: width 0.3s; flex-shrink: 0;
+}
+.eqt-bar-green { background: #65a30d; max-width: 80px; }
+.eqt-pct { font-size: 0.6875rem; font-weight: 700; color: var(--text); min-width: 32px; }
+.eqt-pct-green { color: #3f6212; }
+.eqt-abs { font-size: 0.5625rem; color: var(--text-muted); }
+.sort-arrow { font-size: 0.5rem; margin-left: 2px; }
 
 /* ── Popup édition cellule ── */
 .cell-popup {
@@ -668,7 +815,7 @@ import { useDataStore }                   from '@/stores/dataStore'
 import {
   Upload, FileSpreadsheet, X, Eye, Wand2, Undo2,
   AlertTriangle, CheckCircle2, SkipForward, BarChart2,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, PieChart,
 } from 'lucide-vue-next'
 
 const fc        = useForecastStore()
@@ -685,6 +832,38 @@ const undoProgress = ref(0)
 const undoTotal    = ref(0)
 const viewMode    = ref('month')  // 'month' | 'week'
 const weekIdx     = ref(0)
+
+/* ── Modale répartition globale ── */
+const showEquityModal = ref(false)
+const equitySort      = ref({ key: 'nom', dir: 1 })   // dir: 1=asc, -1=desc
+
+// Personnes affichées dans la modale (sans les fixes)
+const equityPersons = computed(() =>
+  (fc.preview?.persons ?? []).filter(p => !fc.preview?.fixedPersons?.has(p))
+)
+
+const equityPersonsSorted = computed(() => {
+  const { key, dir } = equitySort.value
+  return [...equityPersons.value].sort((a, b) => {
+    let va, vb
+    if      (key === 'nom')    { va = a;                       vb = b }
+    else if (key === 'total')  { va = getHistTotal(a);         vb = getHistTotal(b) }
+    else if (key === 'agence') { va = getAgencePct(a);         vb = getAgencePct(b) }
+    else                       { va = getHistPct(a, key);      vb = getHistPct(b, key) }
+    if (va < vb) return -dir
+    if (va > vb) return  dir
+    return a.localeCompare(b, 'fr')
+  })
+})
+
+function toggleSort(key) {
+  if (equitySort.value.key === key) equitySort.value.dir *= -1
+  else equitySort.value = { key, dir: key === 'nom' ? 1 : -1 }
+}
+function sortArrow(key) {
+  if (equitySort.value.key !== key) return '↕'
+  return equitySort.value.dir === 1 ? '↑' : '↓'
+}
 
 /* ── Édition cellule à la volée ── */
 const editCell = ref(null)   // { person, iso, rectLeft, rectTop, rectBottom }

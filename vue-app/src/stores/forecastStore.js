@@ -4,6 +4,7 @@ import { read, utils } from 'xlsx'
 import { db } from '@/firebase/config'
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
 import { useAdminStore } from '@/stores/adminStore'
+import { isFerie } from '@/stores/statsStore'
 
 /* ============================================================
    CONSTANTES
@@ -118,15 +119,6 @@ export const SHIFT_COLORS = {
 
 const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
 
-// Jours fériés français 2025-2027 (filet de sécurité si l'Excel ne les marque pas ETP=null)
-const FERIES_FR = new Set([
-  '2025-01-01','2025-04-21','2025-05-01','2025-05-08','2025-05-29','2025-06-09',
-  '2025-07-14','2025-08-15','2025-11-01','2025-11-11','2025-12-25',
-  '2026-01-01','2026-04-06','2026-05-01','2026-05-08','2026-05-14','2026-05-25',
-  '2026-07-14','2026-08-15','2026-11-01','2026-11-11','2026-12-25',
-  '2027-01-01','2027-03-29','2027-05-01','2027-05-06','2027-05-08','2027-05-17',
-  '2027-07-14','2027-08-15','2027-11-01','2027-11-11','2027-12-25',
-])
 
 /* ============================================================
    HELPERS
@@ -221,7 +213,7 @@ function countWorkingDays(start, end) {
   const e = new Date(end);   e.setHours(12, 0, 0, 0)
   while (d <= e) {
     const dow = d.getDay()
-    if (dow !== 0 && dow !== 6 && !FERIES_FR.has(fmtIso(d))) n++
+    if (dow !== 0 && dow !== 6 && !isFerie(fmtIso(d))) n++
     d.setDate(d.getDate() + 1)
   }
   return n
@@ -265,7 +257,7 @@ function computePersonStats(planningData, persons) {
     for (const [iso, entries] of Object.entries(pData)) {
       if (iso < startIso || iso > endIso) continue
       const dt = new Date(iso + 'T12:00:00')
-      if (dt.getDay() === 0 || dt.getDay() === 6 || FERIES_FR.has(iso)) continue
+      if (dt.getDay() === 0 || dt.getDay() === 6 || isFerie(iso)) continue
       if (entries.some(e => AGENCE_CATS.has(e.categorie))) agenceDays++
     }
 
@@ -429,7 +421,8 @@ export const useForecastStore = defineStore('forecast', () => {
       if (!weekSheets.length)
         throw new Error('Aucune feuille "semaine XX" trouvée dans le fichier')
 
-      const DOW_PREFIX = { LUN: 1, MAR: 2, MER: 3, JEU: 4, VEN: 5, SAM: 6, DIM: 0 }
+      const DOW_PREFIX  = { LUN: 1, MAR: 2, MER: 3, JEU: 4, VEN: 5, SAM: 6, DIM: 0 }
+      const FIXED_IDS   = ['MACA', 'ALRE']   // personnes fixes pré-remplies dans l'Excel
       const result = {}
 
       for (const sheetName of weekSheets) {
@@ -462,10 +455,36 @@ export const useForecastStore = defineStore('forecast', () => {
           const dow    = DOW_PREFIX[prefix] ?? new Date(iso + 'T12:00:00').getDay()
 
           if (dow === 0 || dow === 6) continue  // skip dimanche et samedi
-          if (FERIES_FR.has(iso)) continue      // skip jours fériés
+          if (isFerie(iso)) continue      // skip jours fériés
 
           const etpNum = Math.round(Number(etpRaw))
           if (!etpRaw || isNaN(etpNum) || etpNum <= 0) continue
+
+          // ── Détecter les personnes fixes (MACA, ALRE) dans ce bloc jour ──
+          // On scanne toutes les lignes du bloc jusqu'à la prochaine ligne PREV.
+          // Pour chaque personne fixe trouvée, on lit le shift dans les cellules de la même ligne.
+          const fixed = {}
+          let blockEnd = wRows.length
+          for (let k = i + 1; k < wRows.length; k++) {
+            if (wRows[k]?.[1] === 'PREV') { blockEnd = k; break }
+          }
+          for (let j = i + 1; j < blockEnd; j++) {
+            const r = wRows[j]
+            if (!r) continue
+            for (let col = 0; col < Math.min(r.length, 6); col++) {
+              const cell = String(r[col] || '').trim().toUpperCase()
+              if (!FIXED_IDS.includes(cell)) continue
+              // Lire le shift depuis le contenu textuel de toute la ligne
+              const rowText = r.map(c => String(c || '')).join(' ').toLowerCase()
+              const fam = /soir/.test(rowText)  ? 'soir'
+                        : /apr/.test(rowText)   ? 'aprem'
+                        : /midi/.test(rowText)  ? 'midi'
+                        : /mat/.test(rowText)   ? 'matin'
+                        : null
+              if (fam) fixed[cell] = fam
+              break
+            }
+          }
 
           const dist = resolveEtpDist(etpNum)
           result[iso] = {
@@ -476,6 +495,7 @@ export const useForecastStore = defineStore('forecast', () => {
             aprem: dist.aprem,
             soir:  dist.soir,
             isSam: dow === 6,
+            fixed,   // { 'MACA': 'matin', 'ALRE': 'soir' } — peut être vide
           }
         }
       }
@@ -593,6 +613,14 @@ export const useForecastStore = defineStore('forecast', () => {
         for (const iso of workDates) {
           const fc       = forecast.value[iso]
           const dayNeeds = { matin: fc.matin, midi: fc.midi, aprem: fc.aprem, soir: fc.soir }
+
+          // ── Personnes fixes (MACA, ALRE) : écrire leur shift et réduire le besoin ETP ──
+          for (const [fixedName, fam] of Object.entries(fc.fixed || {})) {
+            if (!matrix[fixedName]) matrix[fixedName] = {}
+            matrix[fixedName][iso] = SITE_NAME[fam] || fam
+            if (dayNeeds[fam] > 0) dayNeeds[fam]--
+          }
+
           const totalNeeded = dayNeeds.matin + dayNeeds.midi + dayNeeds.aprem + dayNeeds.soir
 
           // Pool du jour : disponibles, non absents, non BO
@@ -732,11 +760,19 @@ export const useForecastStore = defineStore('forecast', () => {
 
     }
 
+    // ── Collecter les noms des personnes fixes présentes dans le forecast ──
+    const fixedPersons = new Set()
+    for (const fc of Object.values(forecast.value)) {
+      for (const name of Object.keys(fc.fixed || {})) fixedPersons.add(name)
+    }
+
     preview.value = {
       dates,
-      persons:  [...allNames].sort((a, b) => a.localeCompare(b, 'fr')),
+      // Personnes fixes en tête (toujours visibles), puis pool trié alphabétiquement
+      persons:  [...fixedPersons, ...[...allNames].sort((a, b) => a.localeCompare(b, 'fr'))],
       matrix,
       activeByDate,
+      fixedPersons,  // Set<name> — lignes non-éditables dans la prévisualisation
       history:  analyzeHistory(
         Object.fromEntries(
           Object.entries(planningData).filter(([name]) =>

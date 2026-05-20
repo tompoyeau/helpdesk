@@ -248,6 +248,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
 import { useUserStore } from '@/stores/userStore'
+import { computePersonStats, computePersonCatBreakdown } from '@/stores/statsStore'
 import { Mail, Download } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import DayModal from '@/components/planning/DayModal.vue'
@@ -306,32 +307,27 @@ function monthLabel(m) { return new Date(m + '-01').toLocaleDateString('fr-FR', 
 function fmtJ(v) { return typeof v === 'number' ? (Number.isInteger(v) ? v : +v.toFixed(1)) : v }
 
 /* ── KPI stats ── */
-const TLT_CATS  = new Set(['TLT Matin','TLT Midi','TLT APREM','TLT Soir','TLT Agence Matin','TLT Agence Midi','TLT Agence APREM','TLT Agence Soir','ApremRenf'])
-const CLI_CATS  = new Set(['Matin','Midi','Aprem','Soir','Formation','PiloteBO'])
-const WORK_CATS = new Set([...TLT_CATS, ...CLI_CATS, 'Agence Matin','Agence Midi','Agence APREM','Agence Soir','Pilote','MatinW11','SoirW11','Astreinte'])
+const win = computed(() => ({
+  startIso: data.filterStart || '2000-01-01',
+  endIso:   data.filterEnd   || new Date().toISOString().slice(0, 10),
+}))
 
-// Convertit des slots (créneaux 15 min) en fraction de journée : ≥23 = 1j, sinon 0.5j
-function slotsToDay(slots) { return slots >= 23 ? 1 : slots > 0 ? 0.5 : 0 }
+const psStats = computed(() => {
+  if (!data.planning) return null
+  return computePersonStats(data.planning, props.personName, win.value)
+})
 
 const stats = computed(() => {
-  if (!d.value) return { workDays: 0, tltDays: 0, clientDays: 0, cpDays: 0, tauxTlt: 0, tauxClient: 0 }
-  let workDays = 0, tltDays = 0, clientDays = 0, cpDays = 0
-  const toDay = c => c === 1 ? 0.5 : c >= 2 ? 1 : 0
-  for (const day in d.value.details) {
-    const entries     = d.value.details[day]
-    const workCount   = entries.filter(e => WORK_CATS.has(e.categorie)).length
-    const tltCount    = entries.filter(e => TLT_CATS.has(e.categorie)).length
-    const clientCount = entries.filter(e => CLI_CATS.has(e.categorie)).length
-    // CP : basé sur les slots réels pour distinguer journée complète / demi-journée
-    const cpSlots     = entries.filter(e => e.categorie === 'CP').reduce((s, e) => s + (e.slots || 0), 0)
-    workDays   += toDay(workCount)
-    tltDays    += toDay(tltCount)
-    clientDays += toDay(clientCount)
-    if (cpSlots > 0 && new Date(day + 'T12:00:00').getDay() !== 6) cpDays += slotsToDay(cpSlots)
+  const s = psStats.value
+  if (!s || s.workDays === 0) return { workDays: 0, tltDays: 0, clientDays: 0, cpDays: 0, tauxTlt: 0, tauxClient: 0 }
+  return {
+    workDays:   s.workDays,
+    tltDays:    s.tltDays,
+    clientDays: s.siteDays,
+    cpDays:     s.cpDays,
+    tauxTlt:    s.tauxTlt,
+    tauxClient: s.workDays > 0 ? Math.round(s.siteDays / s.workDays * 100) : 0,
   }
-  const tauxTlt    = workDays > 0 ? Math.round(tltDays    / workDays * 100) : 0
-  const tauxClient = workDays > 0 ? Math.round(clientDays / workDays * 100) : 0
-  return { workDays, tltDays, clientDays, cpDays, tauxTlt, tauxClient }
 })
 
 const tltColor = computed(() => {
@@ -340,59 +336,39 @@ const tltColor = computed(() => {
 })
 
 /* ── Par catégorie ── */
-const FULL_DAY_CATS = new Set(['CP', 'Indisponible', 'Récup'])
-
 const byCatRows = computed(() => {
-  if (!d.value) return []
-  const byCat = {}
-  for (const day in d.value.details) {
-    // Agrège count et slots par catégorie pour ce jour
-    const catData = {}
-    d.value.details[day].forEach(e => {
-      if (!catData[e.categorie]) catData[e.categorie] = { count: 0, slots: 0 }
-      catData[e.categorie].count++
-      catData[e.categorie].slots += e.slots || 0
-    })
-    for (const [cat, { count, slots }] of Object.entries(catData)) {
-      // CP / Indisponible / Récup : on se base sur les slots réels
-      // pour distinguer journée complète (≥23 créneaux) et demi-journée
-      const val = FULL_DAY_CATS.has(cat)
-        ? slotsToDay(slots)
-        : (count === 1 ? 0.5 : 1)
-      byCat[cat] = (byCat[cat] || 0) + val
-    }
-  }
-  return Object.entries(byCat).sort((a, b) => b[1] - a[1])
+  if (!data.planning) return []
+  const breakdown = computePersonCatBreakdown(data.planning, props.personName, win.value)
+  return Object.entries(breakdown).sort((a, b) => b[1] - a[1])
 })
 
 /* ── Répartition par horaire ── */
-const HORAIRES = [
-  { label: 'Matin',          slots: { 'Client': ['Matin'],  'TLT Domicile': ['TLT Matin'],  'TLT Agence': ['TLT Agence Matin']  }, colors: { 'Client': '#6366F1', 'TLT Domicile': '#22D3EE', 'TLT Agence': '#A78BFA' } },
-  { label: 'Midi',           slots: { 'Client': ['Midi'],   'TLT Domicile': ['TLT Midi'],   'TLT Agence': ['TLT Agence Midi']   }, colors: { 'Client': '#6366F1', 'TLT Domicile': '#22D3EE', 'TLT Agence': '#A78BFA' } },
-  { label: 'Aprem',          slots: { 'Client': ['Aprem'],  'TLT Domicile': ['TLT APREM'],  'TLT Agence': ['TLT Agence APREM']  }, colors: { 'Client': '#6366F1', 'TLT Domicile': '#22D3EE', 'TLT Agence': '#A78BFA' } },
-  { label: 'Soir',           slots: { 'Client': ['Soir'],   'TLT Domicile': ['TLT Soir'],   'TLT Agence': ['TLT Agence Soir']   }, colors: { 'Client': '#6366F1', 'TLT Domicile': '#22D3EE', 'TLT Agence': '#A78BFA' } },
-  { label: 'Journées vertes',slots: { 'Agence': ['Agence Matin','Agence Midi','Agence APREM','Agence Soir'] }, colors: { 'Agence': '#34D399' } },
+const HREP = [
+  { label: 'Matin', h: 'matin' },
+  { label: 'Midi',  h: 'midi'  },
+  { label: 'Aprem', h: 'aprem' },
+  { label: 'Soir',  h: 'soir'  },
 ]
+const HREP_COLORS = { 'Client': '#6366F1', 'TLT': '#22D3EE', 'Agence': '#34D399' }
 
 const repartitionRows = computed(() => {
-  if (!d.value) return []
-  return HORAIRES.map(({ label, slots, colors: slotColors }) => {
-    const counts = {}
-    for (const type in slots) counts[type] = 0
-    for (const day in d.value.details) {
-      for (const [type, cats] of Object.entries(slots)) {
-        const count = d.value.details[day].filter(e => cats.includes(e.categorie)).length
-        if (count === 1) counts[type] += 0.5
-        else if (count >= 2) counts[type] += 1
-      }
-    }
-    const total = Object.values(counts).reduce((a, b) => a + b, 0)
-    if (total === 0) return null
-    const segs = Object.entries(counts)
-      .filter(([, v]) => v > 0)
-      .map(([type, v]) => ({ type, value: v, pct: Math.round(v / total * 100), color: slotColors[type] }))
-    return { label, total, segs }
-  }).filter(Boolean)
+  const s = psStats.value
+  if (!s) return []
+  const rows = []
+  for (const { label, h } of HREP) {
+    const site  = s.detail[h].site
+    const tlt   = s.detail[h].tlt   // inclut TLT Domicile + TLT Agence (mode: 'tlt')
+    const total = Math.round((site + tlt) * 10) / 10
+    if (total === 0) continue
+    const segs = []
+    if (site > 0) segs.push({ type: 'Client', value: site, pct: Math.round(site / total * 100), color: HREP_COLORS['Client'] })
+    if (tlt  > 0) segs.push({ type: 'TLT',    value: tlt,  pct: Math.round(tlt  / total * 100), color: HREP_COLORS['TLT']    })
+    rows.push({ label, total, segs })
+  }
+  if (s.agenceDays > 0) {
+    rows.push({ label: 'Journées vertes', total: s.agenceDays, segs: [{ type: 'Agence', value: s.agenceDays, pct: 100, color: HREP_COLORS['Agence'] }] })
+  }
+  return rows
 })
 
 const samediCount = computed(() => {
