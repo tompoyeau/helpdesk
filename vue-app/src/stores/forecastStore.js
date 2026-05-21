@@ -346,6 +346,94 @@ function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, we
 
 
 /* ============================================================
+   PARSE ETP + FIXES DEPUIS EXCEL (sans toucher au store)
+   Retourne { [iso]: { etp: number, fixed: { 'MACA': 'matin', ... } } }
+   ============================================================ */
+
+export async function parseEtpFromExcel(file) {
+  const buffer = await file.arrayBuffer()
+  const wb = read(buffer, { type: 'array', cellDates: true })
+
+  let yearRef = parseInt(file.name.match(/20\d{2}/)?.[0]) || 0
+  if (!yearRef) {
+    const prevSheet = wb.SheetNames.find(n => n.toLowerCase().replace(/\s/g, '').includes('pr'))
+    if (prevSheet) {
+      const rows = utils.sheet_to_json(wb.Sheets[prevSheet], { header: 1, defval: null })
+      for (let i = 9; i < rows.length; i++) {
+        const dr = rows[i]?.[3]
+        const d  = dr instanceof Date ? dr
+          : (typeof dr === 'number' && dr > 30000 ? new Date(Math.round((dr - 25569) * 86400000)) : null)
+        if (d && d.getFullYear() > 2000) { yearRef = d.getFullYear(); break }
+      }
+    }
+    if (!yearRef) yearRef = new Date().getFullYear()
+  }
+
+  const weekSheets = wb.SheetNames.filter(n => /semaine/i.test(n))
+  if (!weekSheets.length) throw new Error('Aucune feuille "semaine XX" trouvée dans le fichier')
+
+  const DOW_PREFIX = { LUN: 1, MAR: 2, MER: 3, JEU: 4, VEN: 5, SAM: 6, DIM: 0 }
+  const FIXED_IDS  = ['MACA', 'ALRE']
+  const result     = {}
+
+  for (const sheetName of weekSheets) {
+    const wRows = utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null })
+    for (let i = 0; i < wRows.length; i++) {
+      const row = wRows[i]
+      if (!row || row[1] !== 'PREV') continue
+
+      const etpRaw = row[6]
+      let equipeRow = null
+      for (let j = i + 1; j <= i + 4 && j < wRows.length; j++) {
+        if (wRows[j]?.[0] === 'Equipe') { equipeRow = wRows[j]; break }
+      }
+      if (!equipeRow) continue
+
+      const dateStr = typeof equipeRow[1] === 'string' ? equipeRow[1] : ''
+      const match   = dateStr.match(/(\d{2})\/(\d{2})/)
+      if (!match) continue
+
+      const iso    = `${yearRef}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`
+      const prefix = dateStr.slice(0, 3).toUpperCase()
+      const dow    = DOW_PREFIX[prefix] ?? new Date(iso + 'T12:00:00').getDay()
+      if (dow === 0 || dow === 6 || isFerie(iso)) continue
+
+      const etpNum = Math.round(Number(etpRaw))
+      if (!etpRaw || isNaN(etpNum) || etpNum <= 0) continue
+
+      // Personnes fixes (MACA, ALRE)
+      const fixed = {}
+      let blockEnd = wRows.length
+      for (let k = i + 1; k < wRows.length; k++) {
+        if (wRows[k]?.[1] === 'PREV') { blockEnd = k; break }
+      }
+      for (let j = i + 1; j < blockEnd; j++) {
+        const r = wRows[j]
+        if (!r) continue
+        for (let col = 0; col < Math.min(r.length, 6); col++) {
+          const cell = String(r[col] || '').trim().toUpperCase()
+          if (!FIXED_IDS.includes(cell)) continue
+          const rowText = r.map(c => String(c || '')).join(' ').toLowerCase()
+          const fam = /soir/.test(rowText) ? 'soir'
+                    : /apr/.test(rowText)  ? 'aprem'
+                    : /midi/.test(rowText) ? 'midi'
+                    : /mat/.test(rowText)  ? 'matin'
+                    : null
+          if (fam) fixed[cell] = fam
+          break
+        }
+      }
+
+      const dist = resolveEtpDist(etpNum)
+      result[iso] = { etp: etpNum, fixed, matin: dist.matin, midi: dist.midi, aprem: dist.aprem, soir: dist.soir }
+    }
+  }
+
+  if (!Object.keys(result).length) throw new Error('Aucune donnée valide trouvée dans les feuilles "semaine XX"')
+  return result
+}
+
+/* ============================================================
    STORE
    ============================================================ */
 
@@ -766,6 +854,22 @@ export const useForecastStore = defineStore('forecast', () => {
       for (const name of Object.keys(fc.fixed || {})) fixedPersons.add(name)
     }
 
+    // ── Sauvegarde ETP + répartition + fixes en base AVANT d'afficher la preview ──
+    // (merge:true → ne touche pas aux ressources existantes)
+    await Promise.all(
+      Object.entries(forecast.value).map(([iso, fcDay]) => {
+        const [y, m, d] = iso.split('-').map(Number)
+        return admin.saveEtpAndFixed(new Date(y, m - 1, d), {
+          etp:   fcDay.etp   ?? 0,
+          fixed: fcDay.fixed ?? {},
+          matin: fcDay.matin ?? null,
+          midi:  fcDay.midi  ?? null,
+          aprem: fcDay.aprem ?? null,
+          soir:  fcDay.soir  ?? null,
+        }).catch(() => {})
+      })
+    )
+
     preview.value = {
       dates,
       // Personnes fixes en tête (toujours visibles), puis pool trié alphabétiquement
@@ -854,7 +958,12 @@ export const useForecastStore = defineStore('forecast', () => {
           }
         })
 
-        await setDoc(doc(db, collection, dayId), { ressources })
+        // Conserver l'ETP Excel et les horaires fixes (MACA/ALRE) dans le document
+        const fcDay = forecast.value[iso]
+        const etp   = fcDay?.etp   ?? 0
+        const fixed = fcDay?.fixed ?? {}
+
+        await setDoc(doc(db, collection, dayId), { ressources, etp, fixed })
         writtenIds.push(dayId)
         done++
 

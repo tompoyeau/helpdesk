@@ -31,15 +31,30 @@
         </button>
       </div>
 
-      <button
-        class="btn-test-collection"
-        :class="{ 'btn-test-active': admin.collectionName !== 'plannings' }"
-        style="margin-left:auto"
-        @click="toggleTestCollection"
-      >
-        <FlaskConical :size="12" />
-        {{ admin.collectionName !== 'plannings' ? 'Base TEST' : 'Base prod' }}
-      </button>
+      <!-- Import ETP + Équipe Covéa -->
+      <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+        <input ref="etpFileInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="onEtpFile" />
+        <button
+          class="btn-etp-import"
+          :disabled="etpImporting"
+          @click="etpFileInput.click()"
+        >
+          <div v-if="etpImporting" class="btn-spinner-sm"></div>
+          <FileUp v-else :size="12" />
+          {{ etpImporting ? 'Import…' : 'Import ETP' }}
+        </button>
+        <span v-if="etpImportMsg" class="etp-import-msg" :class="{ 'etp-import-err': etpImportMsg.startsWith('Erreur') }">
+          {{ etpImportMsg }}
+        </span>
+        <button
+          class="btn-test-collection"
+          :class="{ 'btn-test-active': admin.collectionName !== 'plannings' }"
+          @click="toggleTestCollection"
+        >
+          <FlaskConical :size="12" />
+          {{ admin.collectionName !== 'plannings' ? 'Base TEST' : 'Base prod' }}
+        </button>
+      </div>
     </div>
 
     <!-- Bannière mode test -->
@@ -61,18 +76,29 @@
           'day-card-active':  selectedDate && fmtId(date) === fmtId(selectedDate),
           'day-card-today':   isToday(date),
           'day-card-weekend': date.getDay() === 6,
+          [`day-card-risk-${riskLevel(dayStatus[fmtId(date)]?.etp, dayStatus[fmtId(date)]?.filledCount)}`]: dayStatus[fmtId(date)]?.state === 'exists',
         }"
         @click="selectDay(date)"
       >
         <div class="day-header">
           <span class="day-name">{{ DAYS[date.getDay()] }}</span>
           <span class="day-num">{{ date.getDate() }}</span>
+          <span
+            v-if="dayStatus[fmtId(date)]?.state === 'exists' && dayStatus[fmtId(date)]?.etp != null"
+            class="risk-dot"
+            :class="`risk-dot-${riskLevel(dayStatus[fmtId(date)].etp, dayStatus[fmtId(date)].filledCount)}`"
+          ></span>
         </div>
         <div v-if="dayStatus[fmtId(date)]" class="day-status">
           <span v-if="dayStatus[fmtId(date)].state === 'loading'" style="color:var(--text-muted)">…</span>
-          <span v-else-if="dayStatus[fmtId(date)].state === 'exists'" :class="dayStatus[fmtId(date)].filledCount > 0 ? 'badge-filled' : 'badge-exists'">
-            <Users :size="10" /> {{ dayStatus[fmtId(date)].filledCount }} / {{ dayStatus[fmtId(date)].total }}
-          </span>
+          <template v-else-if="dayStatus[fmtId(date)].state === 'exists'">
+            <span :class="dayStatus[fmtId(date)].filledCount > 0 ? 'badge-filled' : 'badge-exists'">
+              <Users :size="10" /> {{ dayStatus[fmtId(date)].filledCount }} / {{ dayStatus[fmtId(date)].total }}
+            </span>
+            <span v-if="dayStatus[fmtId(date)].etp != null" class="badge-etp">
+              <Zap :size="9" /> {{ dayStatus[fmtId(date)].etp }} ETP
+            </span>
+          </template>
           <span v-else class="badge-new">
             <Plus :size="10" /> Créer
           </span>
@@ -86,6 +112,9 @@
         <h3>
           {{ DAYS_FULL[selectedDate.getDay()] }}
           {{ selectedDate.getDate() }} {{ MONTHS[selectedDate.getMonth()] }} {{ selectedDate.getFullYear() }}
+          <span v-if="dayStatus[fmtId(selectedDate)]?.etp != null" class="etp-header-badge">
+            <Zap :size="11" /> {{ dayStatus[fmtId(selectedDate)].etp }} ETP
+          </span>
         </h3>
         <div style="display:flex;gap:8px;align-items:center">
           <span v-if="admin.saving" style="font-size:0.75rem;color:var(--text-muted)">Enregistrement…</span>
@@ -171,6 +200,26 @@
           </tbody>
         </table>
         </div>
+
+        <!-- ── Équipe Covéa (MACA/ALRE) + ETP ── -->
+        <div v-if="Object.keys(dayFixed).length || dayData?.etp != null" class="fixed-bar">
+          <div v-if="dayData?.etp != null" class="fixed-bar-etp">
+            <Zap :size="12" style="color:var(--accent)" />
+            <span>ETP <strong>{{ dayData.etp }}</strong></span>
+          </div>
+          <div v-if="Object.keys(dayFixed).length" class="fixed-bar-sep"></div>
+          <span class="fixed-bar-label">Équipe Covéa</span>
+          <div
+            v-for="(fam, name) in dayFixed"
+            :key="name"
+            class="fixed-shift-chip"
+            :style="{ background: FAM_STYLE[fam]?.bg }"
+          >
+            <span class="fixed-chip-name">{{ name }}</span>
+            <span class="fixed-chip-fam" :style="{ color: FAM_STYLE[fam]?.color }">{{ FAM_STYLE[fam]?.label || fam }}</span>
+          </div>
+        </div>
+
       </template>
     </div>
 
@@ -210,6 +259,32 @@
               </tr>
             </thead>
             <tbody>
+              <!-- ── Ligne ETP cible (en tête, juste sous les jours) ── -->
+              <tr class="mm-etp-row">
+                <td class="mm-td-name mm-td-etp">ETP</td>
+                <td
+                  v-for="iso in monthWorkDates"
+                  :key="iso"
+                  class="mm-cell mm-etp-cell"
+                  :class="{
+                    'mm-week-sep':  monthWeekStarts.has(iso),
+                    'mm-cell-sam':  monthSamedis.has(iso),
+                    'mm-cell-ferie':monthFeries.has(iso),
+                  }"
+                  :style="etpCellStyleMonth(iso)"
+                  :title="etpTitleMonth(iso)"
+                >
+                  <template v-if="monthEtp[iso] != null">
+                    <div class="etp-num">{{ monthEtp[iso] }}</div>
+                    <div class="etp-sub">
+                      <span v-if="(monthData[iso]?.filledCount ?? 0) - monthEtp[iso] < 0" style="color:inherit">{{ (monthData[iso]?.filledCount ?? 0) - monthEtp[iso] }}</span>
+                      <span v-else>✓</span>
+                    </div>
+                  </template>
+                  <span v-else class="etp-na">—</span>
+                </td>
+              </tr>
+
               <tr
                 v-for="{ person, fullName } in monthPersonRows"
                 :key="person.id || fullName"
@@ -246,6 +321,53 @@
                   >{{ monthMatrix[fullName][iso].label }}</span>
                 </td>
               </tr>
+
+              <!-- ── Lignes Équipe Covéa (MACA, ALRE) ── -->
+              <template v-if="fixedPersonsInMonth.length">
+                <!-- Séparateur : première cellule sticky, reste = ligne de séparation -->
+                <tr class="mm-fixed-sep">
+                  <td class="mm-td-name mm-fixed-sep-cell">Équipe Covéa</td>
+                  <td
+                    v-for="iso in monthWorkDates"
+                    :key="iso"
+                    class="mm-fixed-sep-td"
+                    :class="{ 'mm-week-sep': monthWeekStarts.has(iso) }"
+                  ></td>
+                </tr>
+                <tr v-for="fixedName in fixedPersonsInMonth" :key="fixedName" class="mm-fixed-row">
+                  <td class="mm-td-name mm-td-fixed">
+                    <div style="display:flex;align-items:center;gap:6px;overflow:hidden">
+                      <div class="person-avatar" style="width:22px;height:22px;font-size:0.5rem;flex-shrink:0;background:var(--accent-light);color:var(--accent)">
+                        {{ fixedName[0] }}
+                      </div>
+                      <span class="mm-person-name">{{ fixedName }}</span>
+                      <span class="badge-fixe" style="font-size:0.5rem">Covéa</span>
+                    </div>
+                  </td>
+                  <td
+                    v-for="iso in monthWorkDates"
+                    :key="iso"
+                    class="mm-cell"
+                    :class="{
+                      'mm-week-sep':   monthWeekStarts.has(iso),
+                      'mm-cell-sam':   monthSamedis.has(iso),
+                      'mm-cell-ferie': monthFeries.has(iso),
+                      'mm-cell-load':  fixedMonthMatrix[fixedName]?.[iso]?.loading,
+                    }"
+                    :style="fixedMonthMatrix[fixedName]?.[iso]?.bg
+                      ? { background: fixedMonthMatrix[fixedName][iso].bg, cursor: 'default' }
+                      : { cursor: 'default' }"
+                  >
+                    <span
+                      v-if="fixedMonthMatrix[fixedName]?.[iso]?.label"
+                      class="mm-cell-label"
+                      :style="{ color: fixedMonthMatrix[fixedName][iso].color }"
+                    >{{ fixedMonthMatrix[fixedName][iso].label }}</span>
+                  </td>
+                </tr>
+              </template>
+
+
             </tbody>
           </table>
         </div>
@@ -319,7 +441,7 @@
 .day-card-active { border-color: var(--accent); background: var(--accent-light); }
 .day-card-today .day-num { color: var(--accent); font-weight: 700; }
 .day-card-weekend { opacity: 0.7; }
-.day-header { display: flex; justify-content: space-between; align-items: baseline; }
+.day-header { display: flex; justify-content: space-between; align-items: center; }
 .day-name { font-size: 0.6875rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
 .day-num  { font-size: 1rem; font-weight: 700; }
 .day-status { display: flex; }
@@ -331,6 +453,68 @@
 .badge-filled { background: rgba(52,211,153,0.15); color: #059669; }
 .badge-exists { background: rgba(245,158,11,0.12); color: #D97706; }
 .badge-new    { background: rgba(99,102,241,0.1);  color: var(--accent); }
+.badge-etp {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 0.625rem; font-weight: 700;
+  padding: 2px 6px; border-radius: 999px;
+  background: rgba(99,102,241,0.1); color: var(--accent);
+  margin-left: 4px;
+}
+.etp-header-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.75rem; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-light); color: var(--accent);
+  margin-left: 10px; vertical-align: middle;
+}
+.badge-fixe {
+  display: inline-flex; align-items: center;
+  font-size: 0.5625rem; font-weight: 700;
+  padding: 1px 5px; border-radius: 4px;
+  background: rgba(99,102,241,0.12); color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+/* ── Bouton Import ETP ── */
+.btn-etp-import {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; font-size: 0.75rem; font-weight: 600;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-etp-import:hover:not(:disabled) { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.btn-etp-import:disabled { opacity: 0.6; cursor: default; }
+.btn-spinner-sm {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid rgba(99,102,241,0.3); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+.etp-import-msg { font-size: 0.6875rem; color: #059669; white-space: nowrap; }
+.etp-import-err { color: #ef4444 !important; }
+
+/* ── Barre Équipe Covéa + ETP (vue semaine) ── */
+.fixed-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  font-size: 0.75rem;
+}
+.fixed-bar-etp {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.75rem; color: var(--text-muted);
+}
+.fixed-bar-etp strong { color: var(--accent); font-size: 0.875rem; }
+.fixed-bar-sep { width: 1px; height: 18px; background: var(--border); }
+.fixed-bar-label { font-size: 0.6875rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.fixed-shift-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.fixed-chip-name { font-weight: 700; font-size: 0.75rem; color: var(--text); }
+.fixed-chip-fam  { font-size: 0.6875rem; font-weight: 600; }
 
 
 /* Day editor */
@@ -519,6 +703,58 @@
   background: color-mix(in srgb, var(--bg-card) 70%, #f59e0b 30%);
 }
 
+/* ── Lignes Équipe Covéa (MACA/ALRE) ── */
+/* Séparateur : premier td sticky hérite mm-td-name, les autres = ligne de fond */
+.mm-fixed-sep-cell {
+  padding: 3px 10px;
+  font-size: 0.5625rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--accent);
+  background: var(--accent-light) !important;
+  border-top: 2px solid var(--border);
+}
+.mm-fixed-sep-td {
+  background: var(--accent-light);
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  padding: 0;
+}
+.mm-td-fixed {
+  background: color-mix(in srgb, var(--bg-card) 96%, #6366f1 4%) !important;
+}
+.mm-fixed-row .mm-td-name { border-bottom: 1px solid var(--border); }
+
+/* ── Ligne ETP (identique à AdminForecast) ── */
+.mm-etp-row { border-top: 2px solid var(--border); }
+.mm-td-etp {
+  background: var(--bg-surface) !important;
+  font-weight: 700; font-size: 0.5rem;
+  color: var(--text-muted); letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mm-etp-cell {
+  cursor: default !important;
+  text-align: center;
+  padding: 2px 1px;
+  transition: background 0.2s;
+}
+.etp-num { font-size: 0.625rem; font-weight: 800; line-height: 1.2; }
+.etp-sub { font-size: 0.5rem; font-weight: 700; line-height: 1.2; opacity: 0.9; display: flex; align-items: center; justify-content: center; gap: 2px; flex-wrap: wrap; }
+.etp-na  { font-size: 0.5rem; color: var(--text-subtle); }
+
+/* Dot de risque dans le header des day cards */
+.risk-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.risk-dot-ok   { background: #22c55e; }
+.risk-dot-warn { background: #f59e0b; }
+.risk-dot-crit { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.5); }
+.risk-dot-none { display: none; }
+
+/* Bordure gauche des day cards selon le risque */
+.day-card-risk-crit { border-left: 3px solid #ef4444 !important; }
+.day-card-risk-warn { border-left: 3px solid #f59e0b !important; }
+.day-card-risk-ok   { border-left: 3px solid #22c55e !important; }
+
 /* ── Mode test ── */
 .btn-test-collection {
   display: inline-flex; align-items: center; gap: 5px;
@@ -555,9 +791,10 @@ const monthOffset = ref(0)        // mois relatif au mois courant
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp,
 } from 'lucide-vue-next'
-import { useAdminStore } from '@/stores/adminStore'
+import { useAdminStore, ETP_CODES } from '@/stores/adminStore'
+import { parseEtpFromExcel } from '@/stores/forecastStore'
 import { useUserStore } from '@/stores/userStore'
 import { useDataStore, ACTIVITY_MAPPING, HORAIRE_RANK } from '@/stores/dataStore'
 import { notifyPlanningChange } from '@/services/notificationService'
@@ -567,6 +804,75 @@ import WeekPicker    from '@/components/planning/WeekPicker.vue'
 const admin     = useAdminStore()
 const userStore = useUserStore()
 const data      = useDataStore()
+
+/* ── Import ETP + MACA/ALRE depuis Excel ── */
+const etpFileInput  = ref(null)
+const etpImporting  = ref(false)
+const etpImportMsg  = ref('')   // feedback message
+
+async function onEtpFile(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  e.target.value = ''
+  etpImporting.value = true
+  etpImportMsg.value = ''
+  try {
+    const days = await parseEtpFromExcel(file)
+    const entries = Object.entries(days)
+    for (const [iso, { etp, fixed, matin, midi, aprem, soir }] of entries) {
+      const [y, m, d] = iso.split('-').map(Number)
+      await admin.saveEtpAndFixed(new Date(y, m - 1, d), { etp, fixed, matin, midi, aprem, soir })
+    }
+    etpImportMsg.value = `✓ ${entries.length} jours importés`
+    // Recharger les données affichées
+    if (viewMode.value === 'month') loadMonthData()
+    else await checkWeekStatus()
+  } catch (err) {
+    etpImportMsg.value = `Erreur : ${err.message}`
+  } finally {
+    etpImporting.value = false
+    setTimeout(() => { etpImportMsg.value = '' }, 4000)
+  }
+}
+
+/* ── Niveau de risque d'une journée : etp cible vs personnes affectées ── */
+function riskLevel(etp, filled) {
+  if (etp == null || etp === 0) return 'none'
+  if (filled == null)           return 'none'
+  if (filled >= etp)                        return 'ok'
+  if (filled >= Math.round(etp * 0.85))     return 'warn'
+  return 'crit'
+}
+
+/* ── Style et tooltip ETP pour la vue mois (identique au forecast) ── */
+function etpCellStyleMonth(iso) {
+  const etp = monthEtp.value[iso]
+  if (etp == null) return { background: 'var(--bg-surface)' }
+  const filled = monthData.value[iso]?.filledCount ?? 0
+  const shortfall = filled - etp
+  if (shortfall >= 0)  return { background: 'color-mix(in srgb, #22c55e 18%, var(--bg-surface))', color: '#22c55e' }
+  if (shortfall === -1) return { background: 'color-mix(in srgb, #f59e0b 22%, var(--bg-surface))', color: '#f59e0b' }
+  return { background: 'color-mix(in srgb, #ef4444 22%, var(--bg-surface))', color: '#ef4444' }
+}
+
+function etpTitleMonth(iso) {
+  const etp = monthEtp.value[iso]
+  if (etp == null) return 'Aucune prévision ETP'
+  const filled = monthData.value[iso]?.filledCount ?? 0
+  const shortfall = filled - etp
+  const status = shortfall === 0 ? '✓ Objectif atteint'
+    : shortfall < 0 ? `⚠ Manque ${-shortfall} pers.`
+    : `+${shortfall} en surplus`
+  return `ETP cible : ${etp}  |  Affectés : ${filled}  (${status})`
+}
+
+/* ── Couleurs et labels pour les créneaux fixes (MACA/ALRE) ── */
+const FAM_STYLE = {
+  matin: { bg: 'rgba(174,219,255,0.5)', color: 'rgba(0,0,0,0.75)', label: 'Matin' },
+  midi:  { bg: 'rgba(149,207,255,0.5)', color: 'rgba(0,0,0,0.75)', label: 'Midi'  },
+  aprem: { bg: 'rgba(89,180,254,0.5)',  color: 'rgba(0,0,0,0.75)', label: 'Aprem' },
+  soir:  { bg: 'rgba(86,166,233,0.5)',  color: 'rgba(0,0,0,0.75)', label: 'Soir'  },
+}
 
 const DAYS      = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
 const DAYS_FULL = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
@@ -651,7 +957,7 @@ async function checkWeekStatus() {
     dayStatus.value = {
       ...dayStatus.value,
       [id]: result.exists
-        ? { state: 'exists', filledCount: result.filledCount, total: result.total }
+        ? { state: 'exists', filledCount: result.filledCount, total: result.total, etp: result.etp }
         : { state: 'empty' }
     }
   }
@@ -691,6 +997,9 @@ const loadingDay    = ref(false)
 const editRessource = ref(null)
 const saveSuccess   = ref(false) // affiché après chaque sauvegarde auto
 const clearTarget   = ref(null)
+
+// Shifts fixes (MACA/ALRE) du jour sélectionné, lus depuis Firestore
+const dayFixed = computed(() => dayData.value?.fixed ?? {})
 
 async function selectDay(date) {
   if (selectedDate.value && fmtId(date) === fmtId(selectedDate.value)) {
@@ -822,8 +1131,9 @@ async function clearActivites(r) {
   clearTarget.value = null
   // Sauvegarde immédiate sans attendre "Enregistrer le planning"
   await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
-  const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && a !== '')).length
-  dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { state: 'exists', filledCount, total: mergedRessources.value.length } }
+  const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+                    + Object.keys(dayFixed.value).length
+  dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { ...dayStatus.value[fmtId(selectedDate.value)], state: 'exists', filledCount, total: mergedRessources.value.length } }
 }
 
 function applyActivitesToRessource(idPersonne, activites) {
@@ -913,6 +1223,43 @@ const monthWeekStarts = computed(() => {
   return set
 })
 
+// Personnes fixes (MACA/ALRE) présentes dans les données du mois (via champ `fixed`)
+const fixedPersonsInMonth = computed(() => {
+  const found = new Set()
+  for (const dayInfo of Object.values(monthData.value)) {
+    if (dayInfo.state !== 'loaded') continue
+    for (const name of Object.keys(dayInfo.fixed || {})) found.add(name)
+  }
+  return [...found].sort()
+})
+
+// Matrice des cellules pour les personnes fixes — couleur par famille d'horaire
+const fixedMonthMatrix = computed(() => {
+  const m = {}
+  for (const fixedName of fixedPersonsInMonth.value) {
+    m[fixedName] = {}
+    for (const iso of monthWorkDates.value) {
+      const dayInfo = monthData.value[iso]
+      if (!dayInfo || dayInfo.state === 'loading') { m[fixedName][iso] = { loading: true }; continue }
+      const fam = dayInfo.fixed?.[fixedName]
+      if (!fam) { m[fixedName][iso] = { empty: true }; continue }
+      const style = FAM_STYLE[fam] || { bg: 'rgba(150,150,150,0.3)', color: 'var(--text)', label: fam.slice(0,3) }
+      m[fixedName][iso] = { bg: style.bg, color: style.color, label: style.label.slice(0, 3) }
+    }
+  }
+  return m
+})
+
+// ETP par jour pour la ligne récapitulative (null = pas encore importé)
+const monthEtp = computed(() => {
+  const out = {}
+  for (const iso of monthWorkDates.value) {
+    const d = monthData.value[iso]
+    out[iso] = (!d || d.state !== 'loaded') ? null : (d.etp ?? null)
+  }
+  return out
+})
+
 // Collaborateurs actifs au moins un jour dans le mois
 const monthPersons = computed(() => {
   if (!userStore.users.length || !monthWorkDates.value.length) return []
@@ -954,6 +1301,12 @@ async function loadMonthData() {
       filledCount: r.filledCount ?? 0,
       total:       r.total       ?? 0,
       exists:      r.exists,
+      etp:   r.etp   ?? null,
+      fixed: r.fixed ?? {},
+      matin: r.matin ?? null,
+      midi:  r.midi  ?? null,
+      aprem: r.aprem ?? null,
+      soir:  r.soir  ?? null,
     }
   }
   monthData.value = newData
@@ -1048,8 +1401,9 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
 
     // Sauvegarde immédiate du jour courant
     await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
-    const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && a !== '')).length
-    dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { state: 'exists', filledCount, total: mergedRessources.value.length } }
+    const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+                      + Object.keys(dayFixed.value).length
+    dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { ...dayStatus.value[fmtId(selectedDate.value)], state: 'exists', filledCount, total: mergedRessources.value.length } }
     saveSuccess.value = true
     setTimeout(() => { saveSuccess.value = false }, 3000)
 
@@ -1079,7 +1433,8 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
         const ressources = result.ressources.filter(r => r.idPersonne !== meta.idPersonne)
         ressources.push(meta)
         await admin.saveDayPlanning(date, ressources)
-        const fc = ressources.filter(r => (r.activites || []).some(a => a && a !== '')).length
+        const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+                 + Object.keys(result.fixed || {}).length
         dayStatus.value = { ...dayStatus.value, [fmtId(date)]: { state: 'exists', filledCount: fc, total: ressources.length } }
       }
     }
@@ -1098,7 +1453,8 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
           else ressources.push(entry)
         }
         await admin.saveDayPlanning(date, ressources)
-        const fc = ressources.filter(r => (r.activites || []).some(a => a && a !== '')).length
+        const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+                 + Object.keys(result.fixed || {}).length
         dayStatus.value = { ...dayStatus.value, [fmtId(date)]: { state: 'exists', filledCount: fc, total: ressources.length } }
       }
     }

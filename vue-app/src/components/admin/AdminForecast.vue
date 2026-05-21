@@ -54,6 +54,10 @@
             <button class="stepper-btn" @click="fc.maxBO++">+</button>
           </div>
         </div>
+        <button class="btn-info" @click="showInfoModal = true">
+          <Info :size="13" />
+          <span>Règles</span>
+        </button>
         <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:8px">
           Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi
         </span>
@@ -312,6 +316,70 @@
         </div>
       </template>
     </template>
+
+  <!-- ── Modale info algorithme ── -->
+  <teleport to="body">
+    <div v-if="showInfoModal" class="eq-modal-backdrop" @click.self="showInfoModal = false">
+      <div class="eq-modal" style="max-width:560px">
+
+        <!-- En-tête -->
+        <div class="eq-modal-head">
+          <div style="display:flex;align-items:center;gap:8px">
+            <Info :size="15" style="color:var(--accent)" />
+            <span style="font-weight:700;font-size:0.875rem">Règles de l'algorithme forecast</span>
+          </div>
+          <button class="btn-icon" @click="showInfoModal = false"><X :size="14" /></button>
+        </div>
+
+        <div class="info-modal-body">
+
+          <!-- ETP -->
+          <div class="info-section">
+            <div class="info-section-title">Dimensionnement ETP</div>
+            <p>La grille ETP détermine le nombre de créneaux matin / midi / aprem / soir à couvrir chaque semaine selon le nombre de collaborateurs disponibles (de 10 à 21+). Si le pool est trop petit, les besoins sont redimensionnés proportionnellement (méthode des plus grands restes).</p>
+          </div>
+
+          <!-- Absences -->
+          <div class="info-section">
+            <div class="info-section-title">Absences protégées</div>
+            <p>Les jours déjà renseignés comme <strong>CP, Indisponible, Récup, Astreinte</strong> ou <strong>RH</strong> ne sont jamais remplacés par l'algorithme, quelle que soit l'option « Écraser existants ».</p>
+          </div>
+
+          <!-- Fixes -->
+          <div class="info-section">
+            <div class="info-section-title">Personnes fixes</div>
+            <p><strong>MACA</strong> et <strong>ALRE</strong> ont leurs plannings lus directement depuis le fichier Excel importé et ne sont pas touchés par le moteur d'affectation.</p>
+          </div>
+
+          <!-- Cohérence horaire -->
+          <div class="info-section">
+            <div class="info-section-title">Cohérence horaire &amp; équité historique</div>
+            <p>Chaque collaborateur garde le même créneau (matin, midi, aprem ou soir) toute la semaine (référence = lundi ou premier jour travaillé).</p>
+            <p style="margin-top:6px">L'algorithme analyse <strong>tout l'historique Firebase</strong> pour compter combien de semaines chaque personne a été sur chaque créneau. Le score d'attribution est : <code>0,25 − (semaines sur ce créneau / total)</code> — ceux qui ont le moins cumulé ce créneau passent en priorité. Une pénalité s'applique si la même personne a eu le même créneau la semaine précédente, et un bonus pour ceux qui n'ont pas été affectés plusieurs semaines d'affilée.</p>
+          </div>
+
+          <!-- TLT -->
+          <div class="info-section">
+            <div class="info-section-title">Télétravail (TLT)</div>
+            <p>Maximum <strong>2 jours TLT par semaine</strong> par collaborateur. Le mercredi est toujours exclu du TLT. Les jours TLT sont alloués après les affectations en présentiel, dans la limite du quota hebdomadaire de chaque personne.</p>
+          </div>
+
+          <!-- Agence -->
+          <div class="info-section">
+            <div class="info-section-title">Journées vertes (Agence)</div>
+            <p>Les créneaux Agence correspondent aux besoins non couverts après les affectations classiques. Maximum <strong>2 jours Agence par personne par semaine</strong>. La distribution suit une rotation mensuelle avec égalisation du ratio historique sur une fenêtre glissante d'un an (ou depuis la date d'arrivée si plus récente).</p>
+          </div>
+
+          <!-- BO -->
+          <div class="info-section">
+            <div class="info-section-title">Back-office (BO)</div>
+            <p>Le BO est attribué en rotation équitable parmi les collaborateurs éligibles (<code>peutBO = true</code>), dans la limite du nombre de BO simultanés configuré ci-dessus. Une personne en BO n'est pas affectée à un créneau horaire cette semaine-là.</p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </teleport>
 
   <!-- ── Modale répartition globale ── -->
   <teleport to="body">
@@ -805,6 +873,55 @@
 }
 .cell-popup-empty:hover { background: var(--bg-hover); }
 .cell-popup-empty.cell-popup-active { outline: 2px solid var(--border); outline-offset: 1px; }
+
+/* ── Bouton info ── */
+.btn-info {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-muted);
+  font-size: 0.75rem; font-weight: 500; cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.btn-info:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-light); }
+
+/* ── Modale info ── */
+.info-modal-body {
+  padding: 16px 20px 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.info-section {
+  background: var(--bg-hover);
+  border-radius: 8px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+}
+.info-section-title {
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-bottom: 5px;
+  letter-spacing: 0.01em;
+}
+.info-section p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text);
+  line-height: 1.55;
+}
+.info-section strong { color: var(--text); }
+.info-section code {
+  font-family: monospace;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 0.7rem;
+}
 </style>
 
 <script setup>
@@ -815,7 +932,7 @@ import { useDataStore }                   from '@/stores/dataStore'
 import {
   Upload, FileSpreadsheet, X, Eye, Wand2, Undo2,
   AlertTriangle, CheckCircle2, SkipForward, BarChart2,
-  ChevronLeft, ChevronRight, PieChart,
+  ChevronLeft, ChevronRight, PieChart, Info,
 } from 'lucide-vue-next'
 
 const fc        = useForecastStore()
@@ -832,6 +949,9 @@ const undoProgress = ref(0)
 const undoTotal    = ref(0)
 const viewMode    = ref('month')  // 'month' | 'week'
 const weekIdx     = ref(0)
+
+/* ── Modale info algorithme ── */
+const showInfoModal = ref(false)
 
 /* ── Modale répartition globale ── */
 const showEquityModal = ref(false)

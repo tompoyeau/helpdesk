@@ -8,6 +8,10 @@ import { TIME_SLOTS } from '@/stores/dataStore'
 
 export { TIME_SLOTS }
 
+// Codes d'activité qui comptent dans l'ETP :
+// Matin/Midi/Aprem/Soir (site client), TLT, TLT Agence — tout le reste est exclu
+export const ETP_CODES = new Set(['0', '1', '15', '2', '20', '21', '22', '23', '12', '13', '17', '14'])
+
 export const useAdminStore = defineStore('admin', () => {
   const saving         = ref(false)
   const error          = ref(null)
@@ -60,25 +64,41 @@ export const useAdminStore = defineStore('admin', () => {
   async function loadDayPlanning(date) {
     const id   = dateToId(date)
     const snap = await getDoc(doc(db, collectionName.value, id))
-    if (!snap.exists()) return { id, exists: false, filled: false, ressources: [] }
+    if (!snap.exists()) return { id, exists: false, filled: false, ressources: [], etp: null, fixed: {}, filledCount: 0, total: 0 }
 
-    const ressources = snap.data().ressources || []
-    // Compte les collaborateurs ayant au moins un créneau renseigné
-    const filledCount = ressources.filter(r => (r.activites || []).some(a => a && a !== '')).length
-    return { id, exists: true, filledCount, total: ressources.length, ressources }
+    const d2         = snap.data()
+    const ressources  = d2.ressources || []
+    const fixedCount  = Object.keys(d2.fixed || {}).length
+    const filledCount = ressources.filter(r =>
+      (r.activites || []).some(a => a && ETP_CODES.has(String(a)))
+    ).length + fixedCount
+    return {
+      id, exists: true, filledCount, total: ressources.length, ressources,
+      etp:   d2.etp   ?? null,
+      fixed: d2.fixed ?? {},
+      matin: d2.matin ?? null,
+      midi:  d2.midi  ?? null,
+      aprem: d2.aprem ?? null,
+      soir:  d2.soir  ?? null,
+    }
   }
 
   async function saveDayPlanning(date, ressources) {
     saving.value = true
     error.value  = null
     try {
-      await setDoc(doc(db, collectionName.value, dateToId(date)), { ressources })
+      await setDoc(doc(db, collectionName.value, dateToId(date)), { ressources }, { merge: true })
     } catch (e) {
       error.value = e.message
       throw e
     } finally {
       saving.value = false
     }
+  }
+
+  // Sauvegarde ETP, shifts fixes et répartition (sans toucher aux ressources)
+  async function saveEtpAndFixed(date, { etp, fixed, matin = null, midi = null, aprem = null, soir = null }) {
+    await setDoc(doc(db, collectionName.value, dateToId(date)), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
   }
 
   /* ── Activités : parse/build ── */
@@ -130,7 +150,7 @@ export const useAdminStore = defineStore('admin', () => {
     generatePersonneId, dateToId,
     inputToFirestore, firestoreToInput,
     createPersonne, updatePersonne, deletePersonne,
-    loadDayPlanning, saveDayPlanning,
+    loadDayPlanning, saveDayPlanning, saveEtpAndFixed,
     parseBlocks, buildActivites, isActiveOn,
   }
 })
