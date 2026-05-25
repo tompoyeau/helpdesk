@@ -21,6 +21,7 @@
           Aujourd'hui
         </button>
         <button
+          v-if="!filterPerson"
           class="btn-sort"
           :class="{ 'btn-sort-active': sortByHoraire }"
           style="margin-left:auto"
@@ -49,24 +50,13 @@
     <!-- Grid body — Skeleton -->
     <div v-if="data.loading" class="planning-grid-body">
       <div v-for="i in 10" :key="i" class="planning-row">
-        <!-- Nom -->
         <div class="planning-name-cell" style="gap:10px;padding:10px 12px">
           <div class="sk-circle" style="width:34px;height:34px;flex-shrink:0;border-radius:50%"></div>
           <div class="sk-bar" :style="`width:${40 + (i * 13) % 45}%;height:11px`"></div>
         </div>
-        <!-- 6 jours — même wrapper que PlanningRow pour respecter la grille CSS -->
         <div class="planning-days-mobile">
-          <div
-            v-for="j in 6"
-            :key="j"
-            class="planning-cell"
-            style="padding:8px"
-          >
-            <div
-              v-if="(i + j) % 4 !== 0"
-              class="sk-bar"
-              style="height:100%;min-height:38px;border-radius:8px"
-            ></div>
+          <div v-for="j in 6" :key="j" class="planning-cell" style="padding:8px">
+            <div v-if="(i + j) % 4 !== 0" class="sk-bar" style="height:100%;min-height:38px;border-radius:8px"></div>
           </div>
         </div>
       </div>
@@ -74,39 +64,52 @@
 
     <!-- Grid body — Données -->
     <div v-else class="planning-grid-body">
-      <!-- Favorites -->
-      <div v-if="favoritePeople.length" class="planning-section">
-        <div class="planning-section-header">
-          <Star :size="14" style="fill:currentColor" />
-          <span>Favoris ({{ favoritePeople.length }})</span>
-        </div>
-        <PlanningRow
-          v-for="person in favoritePeople"
-          :key="person"
-          :person="person"
-          :week-dates="weekDates"
-          :is-favorite="true"
-          @toggle-favorite="toggleFavorite"
-          @open-modal="openModal"
-        />
-      </div>
 
-      <!-- Others -->
-      <div v-if="otherPeople.length" class="planning-section" :class="{ 'planning-section-others': favoritePeople.length > 0 }">
-        <div v-if="favoritePeople.length > 0" class="planning-section-header">
-          <Users :size="14" />
-          <span>Autres collaborateurs ({{ otherPeople.length }})</span>
-        </div>
+      <!-- ── Mode fiche perso : une seule ligne ── -->
+      <template v-if="filterPerson">
         <PlanningRow
-          v-for="person in otherPeople"
-          :key="person"
-          :person="person"
+          :person="filterPerson"
           :week-dates="weekDates"
           :is-favorite="false"
-          @toggle-favorite="toggleFavorite"
           @open-modal="openModal"
         />
-      </div>
+      </template>
+
+      <!-- ── Mode normal : tous les collaborateurs ── -->
+      <template v-else>
+        <div v-if="favoritePeople.length" class="planning-section">
+          <div class="planning-section-header">
+            <Star :size="14" style="fill:currentColor" />
+            <span>Favoris ({{ favoritePeople.length }})</span>
+          </div>
+          <PlanningRow
+            v-for="person in favoritePeople"
+            :key="person"
+            :person="person"
+            :week-dates="weekDates"
+            :is-favorite="true"
+            @toggle-favorite="toggleFavorite"
+            @open-modal="openModal"
+          />
+        </div>
+
+        <div v-if="otherPeople.length" class="planning-section" :class="{ 'planning-section-others': favoritePeople.length > 0 }">
+          <div v-if="favoritePeople.length > 0" class="planning-section-header">
+            <Users :size="14" />
+            <span>Autres collaborateurs ({{ otherPeople.length }})</span>
+          </div>
+          <PlanningRow
+            v-for="person in otherPeople"
+            :key="person"
+            :person="person"
+            :week-dates="weekDates"
+            :is-favorite="false"
+            @toggle-favorite="toggleFavorite"
+            @open-modal="openModal"
+          />
+        </div>
+      </template>
+
     </div>
   </div>
 
@@ -120,6 +123,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+
+const props = defineProps({
+  /** Quand fourni, n'affiche que cette personne (vue fiche collab) */
+  filterPerson: { type: String, default: null },
+})
 import { useDataStore, HORAIRE_RANK } from '@/stores/dataStore'
 import { useAuthStore } from '@/stores/authStore'
 import { db } from '@/firebase/config'
@@ -201,7 +209,6 @@ const activePeople = computed(() => data.activePersons())
 
 /* ── Tri par catégorie d'horaire ── */
 const sortByHoraire = ref(false)
-
 
 function horaireRank(person) {
   const days = weekDates.value

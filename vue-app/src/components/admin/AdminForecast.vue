@@ -924,6 +924,13 @@
 }
 </style>
 
+<script>
+import { ref } from 'vue'
+// Persistants entre les changements d'onglets (réinitialisés uniquement au refresh)
+const overwrite = ref(false)
+const testMode  = ref(false)
+</script>
+
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useForecastStore, SHIFT_COLORS } from '@/stores/forecastStore'
@@ -941,8 +948,7 @@ const data      = useDataStore()
 
 const fileInput   = ref(null)
 const dragOver    = ref(false)
-const overwrite   = ref(false)
-const testMode    = ref(false)
+// overwrite et testMode sont définis en module-scope (persistants entre onglets)
 const genProgress  = ref(0)
 const genTotal     = ref(0)
 const undoProgress = ref(0)

@@ -4,6 +4,11 @@
     :class="{ open: ui.leftDrawerOpen }"
     id="sidebarLeft"
   >
+    <!-- Handle pill (mobile bottom sheet uniquement) -->
+    <div class="drawer-handle-wrap mobile-only" aria-hidden="true">
+      <div class="drawer-handle"></div>
+    </div>
+
     <div class="drawer-header desktop-only-none">
       <span class="drawer-title">Collaborateurs</span>
       <button class="btn-icon btn-icon-sm" @click="ui.closeAllDrawers()">
@@ -72,6 +77,19 @@
 .sk-controls {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.drawer-handle-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+  flex-shrink: 0;
+}
+.drawer-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
 }
 </style>
 

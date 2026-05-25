@@ -1,5 +1,8 @@
 <template>
-  <div v-if="d && ready" class="content-card" style="font-size:0.75rem">
+  <template v-if="d && ready">
+
+  <!-- ── Bloc 1 : En-tête + KPI ── -->
+  <div class="content-card" style="font-size:0.75rem;margin-bottom:12px">
 
     <!-- ── En-tête personne ── -->
     <div class="person-header">
@@ -83,8 +86,16 @@
       </div>
     </div>
 
+  </div><!-- /Bloc 1 -->
+
+  <!-- ── Bloc 2 : Planning de la semaine ── -->
+  <PlanningWeek :filter-person="personName" style="margin-bottom:12px" />
+
+  <!-- ── Bloc 3 : Détails ── -->
+  <div class="content-card" style="font-size:0.75rem;margin-top:12px">
+
     <!-- ── Par catégorie + Répartition par horaire ── -->
-    <div class="person-double-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;margin-bottom:4px">
+    <div class="person-double-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:4px">
 
       <div>
         <h3>Par catégorie</h3>
@@ -212,10 +223,12 @@
     </div><!-- /table-scroll-wrap -->
 
     <DayModal v-model="modalOpen" :person="personName" :date-str="modalDate" />
-  </div>
+  </div><!-- /Bloc 3 -->
 
-  <!-- Skeleton premier rendu -->
-  <div v-else-if="!ready" class="content-card">
+  </template><!-- /v-if d && ready -->
+
+  <!-- Skeleton premier rendu ou données en cours de chargement -->
+  <div v-else-if="!ready || data.loading" class="content-card">
     <div class="pd-sk-header">
       <div class="sk-circle" style="width:44px;height:44px;border-radius:50%;flex-shrink:0"></div>
       <div style="flex:1;display:flex;flex-direction:column;gap:6px">
@@ -252,6 +265,7 @@ import { computePersonStats, computePersonCatBreakdown } from '@/stores/statsSto
 import { Mail, Download } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import DayModal from '@/components/planning/DayModal.vue'
+import PlanningWeek from '@/components/planning/PlanningWeek.vue'
 
 const props     = defineProps({ personName: { type: String, required: true } })
 const data      = useDataStore()

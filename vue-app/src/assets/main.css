@@ -799,7 +799,31 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 640px) {
   .header-title-block h1 { font-size: 13px; }
   .hide-xs { display: none !important; }
-  .sidebar-left, .sidebar-right { top: 52px; }
+
+  /* ── Collabs drawer → bottom sheet ── */
+  .sidebar-left {
+    top: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-height: 78vh;
+    border-radius: 16px 16px 0 0;
+    border-right: none !important;
+    border-top: 1px solid var(--border);
+    transform: translateY(105%) !important;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.16) !important;
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1) !important;
+  }
+  .sidebar-left.open { transform: translateY(0) !important; }
+  .sidebar-left .scroll-area {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Backdrop full-screen sur mobile */
+  .drawer-backdrop { inset: 0 !important; }
+
+  .sidebar-right { top: 52px; }
   .content-card { border-radius: var(--radius-lg); padding: 14px; overflow-x: auto; }
   .content-card h2 { font-size: 14px; margin-bottom: 12px; }
   .content-card h3 { font-size: 12px; }

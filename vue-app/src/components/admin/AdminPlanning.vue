@@ -31,6 +31,18 @@
         </button>
       </div>
 
+      <!-- Nettoyer le mois (mode test uniquement) -->
+      <button
+        v-if="viewMode === 'month' && admin.collectionName !== 'plannings'"
+        class="btn-clear-month"
+        :disabled="clearingMonth"
+        @click="confirmClearMonth = true"
+      >
+        <div v-if="clearingMonth" class="btn-spinner-sm"></div>
+        <Trash2 v-else :size="12" />
+        {{ clearingMonth ? 'Suppression…' : 'Nettoyer le mois' }}
+      </button>
+
       <!-- Import ETP + Équipe Covéa -->
       <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
         <input ref="etpFileInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="onEtpFile" />
@@ -229,6 +241,7 @@
     <template v-else>
       <div class="month-matrix-outer">
 
+
         <!-- Indicateur de chargement -->
         <div v-if="monthLoading" class="month-loading-bar">
           <span style="color:var(--text-muted);font-size:0.75rem">Chargement du mois…</span>
@@ -373,6 +386,26 @@
         </div>
       </div>
     </template><!-- fin vue mois -->
+
+    <!-- Confirmation nettoyage du mois -->
+    <Teleport to="body">
+      <div v-if="confirmClearMonth" class="modal-backdrop" @click.self="confirmClearMonth = false">
+        <div class="modal-confirm-box">
+          <div class="modal-confirm-icon"><Trash2 :size="22" /></div>
+          <h3 class="modal-confirm-title">Nettoyer le mois ?</h3>
+          <p class="modal-confirm-body">
+            Tous les plannings de <strong>{{ monthNavLabel }}</strong> seront supprimés
+            de la base <strong>test</strong>. Cette action est irréversible.
+          </p>
+          <div class="modal-confirm-actions">
+            <button class="btn-confirm-cancel" @click="confirmClearMonth = false">Annuler</button>
+            <button class="btn-confirm-delete" @click="doClearMonth">
+              <Trash2 :size="13" /> Supprimer
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Modal édition personne/jour -->
     <DayEditorModal
@@ -777,6 +810,63 @@
   border-radius: var(--radius-sm); font-size: 0.75rem;
   font-weight: 500; color: #b45309;
 }
+
+
+.btn-clear-month {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 600;
+  background: color-mix(in srgb, #ef4444 12%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border));
+  border-radius: var(--radius-sm); color: #ef4444;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-clear-month:hover:not(:disabled) { background: color-mix(in srgb, #ef4444 20%, var(--bg-surface)); }
+.btn-clear-month:disabled { opacity: 0.6; cursor: default; }
+
+/* Modale confirmation */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(15,17,40,0.5);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-confirm-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 28px 22px;
+  width: 340px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.modal-confirm-icon {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: color-mix(in srgb, #ef4444 14%, var(--bg-surface));
+  color: #ef4444;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 2px;
+}
+.modal-confirm-title { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0; }
+.modal-confirm-body {
+  font-size: 0.8125rem; color: var(--text-muted); text-align: center;
+  line-height: 1.5; margin: 0;
+}
+.modal-confirm-actions { display: flex; gap: 10px; margin-top: 8px; }
+.btn-confirm-cancel {
+  padding: 8px 18px; font-size: 0.8125rem; font-weight: 600;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-confirm-cancel:hover { background: var(--bg-hover); }
+.btn-confirm-delete {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; font-size: 0.8125rem; font-weight: 600;
+  background: #ef4444; border: none;
+  border-radius: var(--radius-sm); color: #fff; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-confirm-delete:hover { background: #dc2626; }
 </style>
 
 <script>
@@ -791,7 +881,7 @@ const monthOffset = ref(0)        // mois relatif au mois courant
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2,
 } from 'lucide-vue-next'
 import { useAdminStore, ETP_CODES } from '@/stores/adminStore'
 import { parseEtpFromExcel } from '@/stores/forecastStore'
@@ -806,9 +896,11 @@ const userStore = useUserStore()
 const data      = useDataStore()
 
 /* ── Import ETP + MACA/ALRE depuis Excel ── */
-const etpFileInput  = ref(null)
-const etpImporting  = ref(false)
-const etpImportMsg  = ref('')   // feedback message
+const etpFileInput     = ref(null)
+const etpImporting     = ref(false)
+const etpImportMsg     = ref('')   // feedback message
+const confirmClearMonth = ref(false)
+const clearingMonth    = ref(false)
 
 async function onEtpFile(e) {
   const file = e.target.files?.[0]
@@ -883,11 +975,30 @@ async function toggleTestCollection() {
   admin.collectionName = admin.collectionName === 'plannings' ? 'plannings_test' : 'plannings'
   dayStatus.value = {}
   dayData.value   = null
-  await checkWeekStatus()
-  if (selectedDate.value) {
-    loadingDay.value = true
-    dayData.value    = await admin.loadDayPlanning(selectedDate.value)
-    loadingDay.value = false
+  monthData.value = {}
+  if (viewMode.value === 'week') {
+    await checkWeekStatus()
+    if (selectedDate.value) {
+      loadingDay.value = true
+      dayData.value    = await admin.loadDayPlanning(selectedDate.value)
+      loadingDay.value = false
+    }
+  } else {
+    await loadMonthData()
+  }
+}
+
+/* ── Nettoyage du mois (mode test uniquement) ── */
+async function doClearMonth() {
+  confirmClearMonth.value = false
+  clearingMonth.value = true
+  try {
+    await admin.clearMonthPlanning(monthWorkDates.value)
+    // Réinitialise l'état local du mois
+    monthData.value = {}
+    await loadMonthData()
+  } finally {
+    clearingMonth.value = false
   }
 }
 
@@ -1125,15 +1236,32 @@ function openDayEditor(r) {
   editRessource.value = JSON.parse(JSON.stringify(r)) // deep copy
 }
 
+/* ── Met à jour monthData en place après une sauvegarde (vue mois) ── */
+function updateMonthDay(iso, ressources, filledCount) {
+  if (!(iso in monthData.value)) return
+  monthData.value = {
+    ...monthData.value,
+    [iso]: {
+      ...monthData.value[iso],
+      ressources,
+      filledCount,
+      total:  ressources.length,
+      exists: true,
+      state:  'loaded',
+    },
+  }
+}
+
 async function clearActivites(r) {
   const empty = new Array(45).fill('')
   applyActivitesToRessource(r.idPersonne, empty)
   clearTarget.value = null
-  // Sauvegarde immédiate sans attendre "Enregistrer le planning"
   await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
   const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
                     + Object.keys(dayFixed.value).length
+  const iso = fmtIso(selectedDate.value)
   dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { ...dayStatus.value[fmtId(selectedDate.value)], state: 'exists', filledCount, total: mergedRessources.value.length } }
+  updateMonthDay(iso, mergedRessources.value, filledCount)
 }
 
 function applyActivitesToRessource(idPersonne, activites) {
@@ -1274,6 +1402,7 @@ const monthPersonRows = computed(() =>
   monthPersons.value.map(p => ({ person: p, fullName: `${p.nom} ${p.prenom}` }))
 )
 
+
 // Données chargées pour le mois : { iso → { state, ressources, filledCount, total } }
 const monthData    = ref({})
 const monthLoading = ref(false)
@@ -1403,7 +1532,9 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
     await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
     const filledCount = mergedRessources.value.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
                       + Object.keys(dayFixed.value).length
+    const currentIso = fmtIso(selectedDate.value)
     dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { ...dayStatus.value[fmtId(selectedDate.value)], state: 'exists', filledCount, total: mergedRessources.value.length } }
+    updateMonthDay(currentIso, mergedRessources.value, filledCount)
     saveSuccess.value = true
     setTimeout(() => { saveSuccess.value = false }, 3000)
 
@@ -1436,6 +1567,7 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
         const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
                  + Object.keys(result.fixed || {}).length
         dayStatus.value = { ...dayStatus.value, [fmtId(date)]: { state: 'exists', filledCount: fc, total: ressources.length } }
+        updateMonthDay(fmtIso(date), ressources, fc)
       }
     }
 
@@ -1456,6 +1588,7 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
         const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
                  + Object.keys(result.fixed || {}).length
         dayStatus.value = { ...dayStatus.value, [fmtId(date)]: { state: 'exists', filledCount: fc, total: ressources.length } }
+        updateMonthDay(fmtIso(date), ressources, fc)
       }
     }
   } finally {

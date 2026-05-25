@@ -54,6 +54,7 @@
 
 <script setup>
 import { onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useDataStore } from '@/stores/dataStore'
@@ -70,6 +71,8 @@ const ui          = useUiStore()
 const data        = useDataStore()
 const userStore   = useUserStore()
 const notifStore  = useNotificationStore()
+const router      = useRouter()
+const route       = useRoute()
 
 onMounted(async () => {
   ui.initDark()
@@ -86,6 +89,11 @@ watch(() => auth.user, async (newUser, oldUser) => {
     await userStore.loadUser(newUser.uid)
     await data.init()
     notifStore.subscribe(newUser.uid)
+
+    // Redirige vers la fiche perso si l'utilisateur arrive sur /planning ou /
+    if (userStore.nom && userStore.prenom && (route.path === '/planning' || route.path === '/')) {
+      router.replace({ name: 'person', params: { name: `${userStore.nom} ${userStore.prenom}` } })
+    }
   } else if (!newUser && oldUser) {
     // Déconnexion : résilie tous les abonnements Firestore
     data.cleanup()

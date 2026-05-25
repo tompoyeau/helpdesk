@@ -44,19 +44,39 @@
         <Moon v-if="!ui.darkMode" :size="15" />
         <Sun v-else :size="15" />
       </button>
-      <button class="btn-icon" @click="auth.signOut()" title="Déconnexion">
-        <LogOut :size="15" />
-      </button>
+
+      <!-- Bouton profil + menu dropdown -->
+      <div class="user-menu" v-click-outside="() => menuOpen = false">
+        <button class="btn-icon user-menu-trigger" @click="menuOpen = !menuOpen" :title="`${userStore.prenom} ${userStore.nom}`">
+          <span v-if="initials" class="user-initials">{{ initials }}</span>
+          <User v-else :size="15" />
+        </button>
+        <div v-if="menuOpen" class="user-dropdown" @click="menuOpen = false">
+          <RouterLink
+            v-if="userStore.nom && userStore.prenom"
+            :to="{ name: 'person', params: { name: `${userStore.nom} ${userStore.prenom}` } }"
+            class="user-dropdown-item"
+          >
+            <UserCircle :size="14" />
+            <span>Mon profil</span>
+          </RouterLink>
+          <button class="user-dropdown-item user-dropdown-item--danger" @click="auth.signOut()">
+            <LogOut :size="14" />
+            <span>Déconnexion</span>
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 </template>
 
 <script setup>
+import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
-import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield } from 'lucide-vue-next'
+import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield, User, UserCircle } from 'lucide-vue-next'
 import DateRangePicker   from '@/components/layout/DateRangePicker.vue'
 import NotificationBell  from '@/components/layout/NotificationBell.vue'
 
@@ -64,4 +84,65 @@ const route     = useRoute()
 const ui        = useUiStore()
 const auth      = useAuthStore()
 const userStore = useUserStore()
+
+const menuOpen = ref(false)
+
+const initials = computed(() => {
+  const p = userStore.prenom?.[0] ?? ''
+  const n = userStore.nom?.[0] ?? ''
+  return (p + n).toUpperCase()
+})
+
+// Directive v-click-outside
+const vClickOutside = {
+  mounted(el, binding) {
+    el._clickOutside = (e) => { if (!el.contains(e.target)) binding.value(e) }
+    document.addEventListener('click', el._clickOutside)
+  },
+  unmounted(el) {
+    document.removeEventListener('click', el._clickOutside)
+  },
+}
 </script>
+
+<style scoped>
+.user-menu { position: relative; }
+
+.user-initials {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.9);
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 160px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  overflow: hidden;
+  z-index: 200;
+}
+
+.user-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  font-size: 0.8125rem;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.user-dropdown-item:hover { background: var(--bg-hover); }
+.user-dropdown-item--danger { color: #ef4444; }
+.user-dropdown-item--danger:hover { background: color-mix(in srgb, #ef4444 10%, var(--bg-card)); }
+</style>

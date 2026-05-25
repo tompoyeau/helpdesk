@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { db } from '@/firebase/config'
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch,
 } from 'firebase/firestore'
 import { TIME_SLOTS } from '@/stores/dataStore'
 
@@ -101,6 +101,16 @@ export const useAdminStore = defineStore('admin', () => {
     await setDoc(doc(db, collectionName.value, dateToId(date)), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
   }
 
+  // Supprime tous les documents d'une liste de dates ISO (yyyy-mm-dd) — test uniquement
+  async function clearMonthPlanning(isoDates) {
+    const batch = writeBatch(db)
+    for (const iso of isoDates) {
+      const [y, m, d] = iso.split('-').map(Number)
+      batch.delete(doc(db, collectionName.value, dateToId(new Date(y, m - 1, d))))
+    }
+    await batch.commit()
+  }
+
   /* ── Activités : parse/build ── */
   // activites[] → [{code, startSlot, endSlot}]
   function parseBlocks(activites) {
@@ -150,7 +160,7 @@ export const useAdminStore = defineStore('admin', () => {
     generatePersonneId, dateToId,
     inputToFirestore, firestoreToInput,
     createPersonne, updatePersonne, deletePersonne,
-    loadDayPlanning, saveDayPlanning, saveEtpAndFixed,
+    loadDayPlanning, saveDayPlanning, saveEtpAndFixed, clearMonthPlanning,
     parseBlocks, buildActivites, isActiveOn,
   }
 })

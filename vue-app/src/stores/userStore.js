@@ -17,6 +17,8 @@ import { doc, getDoc, getDocs, collection, updateDoc } from 'firebase/firestore'
 
 export const useUserStore = defineStore('user', () => {
   const isAdmin = ref(false)
+  const nom     = ref('')
+  const prenom  = ref('')
   const users   = ref([])
   const loading = ref(false)
 
@@ -24,7 +26,16 @@ export const useUserStore = defineStore('user', () => {
   // Le UID Firebase Auth = ID du document personnes → lookup direct
   async function loadUser(uid) {
     const snap = await getDoc(doc(db, 'personnes', uid))
-    isAdmin.value = snap.exists() ? snap.data().isAdmin === true : false
+    if (snap.exists()) {
+      const d = snap.data()
+      isAdmin.value = d.isAdmin === true
+      nom.value     = d.nom    || ''
+      prenom.value  = d.prenom || ''
+    } else {
+      isAdmin.value = false
+      nom.value     = ''
+      prenom.value  = ''
+    }
   }
 
   /* ── Liste de tous les collaborateurs (vue admin) ── */
@@ -52,8 +63,10 @@ export const useUserStore = defineStore('user', () => {
   /* ── Réinitialisation à la déconnexion ── */
   function reset() {
     isAdmin.value = false
+    nom.value     = ''
+    prenom.value  = ''
     users.value   = []
   }
 
-  return { isAdmin, users, loading, loadUser, loadAllUsers, setAdmin, reset }
+  return { isAdmin, nom, prenom, users, loading, loadUser, loadAllUsers, setAdmin, reset }
 })
