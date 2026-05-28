@@ -42,33 +42,48 @@
 
           <!-- ── Mode édition ── -->
           <template v-if="editingIdx === i">
-            <select v-model="editingBlock.code" class="form-input form-input-edit" @change="editError = ''">
-              <option v-for="[code, act] in activityOptions" :key="code" :value="code">
-                {{ act.categorie }}
-              </option>
-            </select>
-            <button
-              v-if="PRESETS[editingBlock.code]"
-              class="btn-preset-xs"
-              title="Pré-remplir les heures"
-              @click="applyEditPreset"
-            >
-              <Zap :size="10" />
-            </button>
-            <select v-model="editingBlock.startSlot" class="form-input form-input-xs" @change="editError = ''">
-              <option v-for="(t, idx) in TIME_SLOTS.slice(0, 44)" :key="idx" :value="idx">{{ t }}</option>
-            </select>
-            <span style="color:var(--text-muted);font-size:0.75rem;flex-shrink:0">→</span>
-            <select v-model="editingBlock.endSlot" class="form-input form-input-xs" @change="editError = ''">
-              <option
-                v-for="(t, idx) in TIME_SLOTS.slice(1)"
-                :key="idx + 1"
-                :value="idx + 1"
-                :disabled="idx + 1 <= editingBlock.startSlot"
-              >{{ t }}</option>
-            </select>
-            <button class="btn-edit-confirm" title="Valider" @click="confirmEdit"><Check :size="11" /></button>
-            <button class="btn-edit-cancel"  title="Annuler" @click="cancelEdit"><X   :size="11" /></button>
+            <div class="chips-grid chips-grid-sm">
+              <div v-for="group in CHIP_GROUPS" :key="group.label" class="chips-col">
+                <div class="chips-col-label">{{ group.label }}</div>
+                <button
+                  v-for="code in group.codes"
+                  :key="code"
+                  class="activity-chip activity-chip-sm"
+                  :class="{ selected: editingBlock.code === code }"
+                  :style="editingBlock.code === code
+                    ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: chipBg(ACTIVITY_MAPPING[code].couleur) }
+                    : {}"
+                  @click="selectEditCode(code)"
+                >
+                  <span class="chip-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
+                  {{ ACTIVITY_MAPPING[code].categorie }}
+                </button>
+              </div>
+            </div>
+            <div class="edit-time-row">
+              <button
+                v-if="PRESETS[editingBlock.code]"
+                class="btn-preset-xs"
+                title="Pré-remplir les heures"
+                @click="applyEditPreset"
+              >
+                <Zap :size="10" />
+              </button>
+              <select v-model="editingBlock.startSlot" class="form-input form-input-xs" @change="editError = ''">
+                <option v-for="(t, idx) in TIME_SLOTS.slice(0, 44)" :key="idx" :value="idx">{{ t }}</option>
+              </select>
+              <span style="color:var(--text-muted);font-size:0.75rem;flex-shrink:0">→</span>
+              <select v-model="editingBlock.endSlot" class="form-input form-input-xs" @change="editError = ''">
+                <option
+                  v-for="(t, idx) in TIME_SLOTS.slice(1)"
+                  :key="idx + 1"
+                  :value="idx + 1"
+                  :disabled="idx + 1 <= editingBlock.startSlot"
+                >{{ t }}</option>
+              </select>
+              <button class="btn-edit-confirm" title="Valider" @click="confirmEdit"><Check :size="11" /></button>
+              <button class="btn-edit-cancel"  title="Annuler" @click="cancelEdit"><X   :size="11" /></button>
+            </div>
           </template>
 
           <!-- ── Mode lecture ── -->
@@ -91,48 +106,58 @@
       <!-- Formulaire ajout -->
       <div class="add-section">
         <div class="section-title">Ajouter une activité</div>
-        <div class="add-form">
-          <select v-model="newBlock.code" class="form-input" @change="onCodeChange">
-            <option value="">— Activité —</option>
-            <option v-for="[code, act] in activityOptions" :key="code" :value="code">
-              {{ act.categorie }}
-            </option>
-          </select>
 
-          <template v-if="newBlock.code">
-            <!-- Pré-remplissage rapide si preset disponible -->
+        <!-- Grille chips (5 colonnes) -->
+        <div class="chips-grid">
+          <div v-for="group in CHIP_GROUPS" :key="group.label" class="chips-col">
+            <div class="chips-col-label">{{ group.label }}</div>
             <button
-              v-if="PRESETS[newBlock.code]"
-              class="btn-preset"
-              @click="applyPreset"
+              v-for="code in group.codes"
+              :key="code"
+              class="activity-chip"
+              :class="{ selected: newBlock.code === code }"
+              :style="newBlock.code === code
+                ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: chipBg(ACTIVITY_MAPPING[code].couleur) }
+                : {}"
+              @click="selectCode(code)"
             >
-              <Zap :size="11" /> Pré-remplir
+              <span class="chip-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
+              {{ ACTIVITY_MAPPING[code].categorie }}
             </button>
+          </div>
+        </div>
 
-            <!-- Saisie manuelle (toujours visible) -->
-            <select v-model="newBlock.startSlot" class="form-input form-input-sm">
-              <option v-for="(t, i) in TIME_SLOTS.slice(0, 44)" :key="i" :value="i">{{ t }}</option>
-            </select>
-            <span style="color:var(--text-muted);font-size:0.75rem">→</span>
-            <select v-model="newBlock.endSlot" class="form-input form-input-sm">
-              <option
-                v-for="(t, i) in TIME_SLOTS.slice(1)"
-                :key="i + 1"
-                :value="i + 1"
-                :disabled="i + 1 <= newBlock.startSlot"
-              >{{ t }}</option>
-            </select>
-            <button class="btn-add" @click="addBlock">
-              <Plus :size="12" /> Ajouter
-            </button>
-          </template>
+        <!-- Contrôles horaires (visibles après sélection) -->
+        <div v-if="newBlock.code" class="add-form">
+          <button
+            v-if="PRESETS[newBlock.code]"
+            class="btn-preset"
+            @click="applyPreset"
+          >
+            <Zap :size="11" /> Pré-remplir
+          </button>
+          <select v-model="newBlock.startSlot" class="form-input form-input-sm">
+            <option v-for="(t, i) in TIME_SLOTS.slice(0, 44)" :key="i" :value="i">{{ t }}</option>
+          </select>
+          <span style="color:var(--text-muted);font-size:0.75rem">→</span>
+          <select v-model="newBlock.endSlot" class="form-input form-input-sm">
+            <option
+              v-for="(t, i) in TIME_SLOTS.slice(1)"
+              :key="i + 1"
+              :value="i + 1"
+              :disabled="i + 1 <= newBlock.startSlot"
+            >{{ t }}</option>
+          </select>
+          <button class="btn-add" @click="addBlock">
+            <Plus :size="12" /> Ajouter
+          </button>
         </div>
         <div v-if="overlapError" class="form-error">{{ overlapError }}</div>
       </div>
 
       <div class="modal-footer">
         <button class="btn-ghost" @click="$emit('close')">Annuler</button>
-        <button class="btn-save" :disabled="!blocks.length || !hasChanged" @click="goToStep2">Valider</button>
+        <button class="btn-save" :disabled="!hasChanged" @click="goToStep2">Valider</button>
       </div>
     </div>
 
@@ -164,9 +189,19 @@
       <!-- Appliquer à d'autres collabs -->
       <div class="apply-section" v-if="otherCollabs.length">
         <div class="section-title"><Users :size="11" /> Appliquer à d'autres collaborateurs</div>
+        <!-- Recherche -->
+        <div class="collab-search-wrap">
+          <Search :size="13" class="collab-search-icon" />
+          <input
+            v-model="collabSearch"
+            class="collab-search-input"
+            type="text"
+            placeholder="Rechercher un collaborateur…"
+          />
+        </div>
         <div class="collab-list">
           <label
-            v-for="c in otherCollabs"
+            v-for="c in filteredCollabs"
             :key="c.idPersonne"
             class="collab-check"
           >
@@ -176,9 +211,10 @@
             </div>
             <span>{{ c.nom }} {{ c.prenom }}</span>
           </label>
+          <span v-if="!filteredCollabs.length" class="empty-hint" style="padding:4px 0">Aucun résultat</span>
         </div>
         <div class="quick-actions">
-          <button class="btn-ghost-xs" @click="selectedCollabs = otherCollabs.map(c => c.idPersonne)">Tous</button>
+          <button class="btn-ghost-xs" @click="selectedCollabs = sortedCollabs.map(c => c.idPersonne)">Tous</button>
           <button class="btn-ghost-xs" @click="selectedCollabs = []">Aucun</button>
         </div>
         <!-- Option semaine pour les collabs sélectionnés -->
@@ -265,6 +301,39 @@
 .block-time { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); }
 .btn-danger-ghost { color: #EF4444 !important; }
 .btn-danger-ghost:hover { background: rgba(239,68,68,0.1) !important; }
+
+/* Grille chips 5 colonnes */
+.chips-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px 6px;
+  margin-bottom: 14px;
+}
+.chips-grid-sm { margin-bottom: 8px; }
+.chips-col {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.chips-col-label {
+  font-size: 0.5625rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); padding: 0 2px;
+  margin-bottom: 1px;
+}
+.activity-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 7px; font-size: 0.7rem; font-weight: 500;
+  border: 1.5px solid var(--border); border-radius: 7px;
+  background: var(--bg-surface); color: var(--text);
+  cursor: pointer; transition: all 0.12s;
+  text-align: left; width: 100%; line-height: 1.2;
+  overflow: hidden;
+}
+.activity-chip:hover { background: var(--bg-hover); border-color: var(--border-input); }
+.activity-chip.selected { font-weight: 700; }
+.activity-chip-sm { padding: 4px 6px; font-size: 0.6875rem; }
+.chip-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
 
 /* Add form */
 .add-form {
@@ -357,10 +426,15 @@
 .block-row-editing {
   background: var(--accent-light);
   border-radius: var(--radius-sm);
-  padding: 4px 6px;
+  padding: 8px 10px;
   margin: 0 -6px;
-  flex-wrap: wrap;
-  gap: 5px !important;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px !important;
+}
+/* Ligne horaires + actions en mode édition */
+.block-row-editing .edit-time-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%;
 }
 
 /* Input select compact pour l'édition inline */
@@ -416,10 +490,26 @@
   padding: 0 20px 16px;
   border-top: 1px solid var(--border);
 }
+/* Recherche collabs */
+.collab-search-wrap {
+  position: relative; margin: 8px 0 6px;
+}
+.collab-search-icon {
+  position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); pointer-events: none;
+}
+.collab-search-input {
+  width: 100%; padding: 6px 10px 6px 30px;
+  border: 1px solid var(--border-input); border-radius: 8px;
+  font-size: 0.75rem; background: var(--bg-surface); color: var(--text);
+  outline: none; box-sizing: border-box;
+}
+.collab-search-input:focus { border-color: var(--border-focus); }
+
 .collab-list {
   display: flex; flex-direction: column; gap: 4px;
-  max-height: 180px; overflow-y: auto;
-  margin-top: 8px;
+  max-height: 160px; overflow-y: auto;
+  margin-top: 4px;
 }
 .collab-check {
   display: flex; align-items: center; gap: 8px;
@@ -453,8 +543,8 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { X, Trash2, Plus, Zap, Users, CalendarDays, Clock, Pencil, Check } from 'lucide-vue-next'
-import { useAdminStore, TIME_SLOTS } from '@/stores/adminStore'
+import { X, Trash2, Plus, Zap, Users, CalendarDays, Clock, Pencil, Check, Search } from 'lucide-vue-next'
+import { useAdminStore, TIME_SLOTS, QUICK_PRESETS } from '@/stores/adminStore'
 import { ACTIVITY_MAPPING } from '@/stores/dataStore'
 
 const props = defineProps({
@@ -472,6 +562,19 @@ const selectedCollabs      = ref([])
 const applyWholeWeek       = ref(false)
 const applyCollabsWholeWeek = ref(false)
 
+/* ── Recherche collabs (étape 2) ── */
+const collabSearch = ref('')
+const sortedCollabs = computed(() =>
+  [...props.otherCollabs].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'))
+)
+const filteredCollabs = computed(() => {
+  const q = collabSearch.value.toLowerCase().trim()
+  if (!q) return sortedCollabs.value
+  return sortedCollabs.value.filter(c =>
+    c.nom.toLowerCase().includes(q) || c.prenom.toLowerCase().includes(q)
+  )
+})
+
 /* ── Données ── */
 const blocks = ref(admin.parseBlocks(props.ressource.activites || []))
 const _initialBlocks = JSON.stringify(blocks.value)
@@ -482,44 +585,17 @@ const overlapError = ref('')
 /* ── Options activités ── */
 const activityOptions = Object.entries(ACTIVITY_MAPPING)
 
-/* ── Presets créneaux (slot = (heure*60 + min - 480) / 15) ── */
-// Matin  : 8h-12h    + 13h-16h30   → slots 0-16  + 20-34
-// Midi   : 8h30-12h30 + 13h30-17h  → slots 2-18  + 22-36
-// Aprem  : 9h-12h30  + 13h30-17h30 → slots 4-18  + 22-38
-// Soir   : 9h15-13h15 + 14h30-18h  → slots 5-21  + 26-40
-// PiloteBO: 8h45-12h45 + 13h30-17h → slots 3-19  + 22-36
-const S_MATIN   = [{ startSlot: 0, endSlot: 16 }, { startSlot: 20, endSlot: 34 }]
-const S_MIDI    = [{ startSlot: 2, endSlot: 18 }, { startSlot: 22, endSlot: 36 }]
-const S_APREM   = [{ startSlot: 4, endSlot: 18 }, { startSlot: 22, endSlot: 38 }]
-const S_SOIR    = [{ startSlot: 5, endSlot: 21 }, { startSlot: 26, endSlot: 40 }]
-const S_PILOTEBO = [{ startSlot: 3, endSlot: 19 }, { startSlot: 22, endSlot: 36 }]
+/* ── Groupes de chips ── */
+const CHIP_GROUPS = [
+  { label: 'Matin', codes: ['0', '9', '12', '20', '28'] },
+  { label: 'Midi',  codes: ['1', '10', '13', '21'] },
+  { label: 'Aprem', codes: ['15', '16', '17', '22', '27'] },
+  { label: 'Soir',  codes: ['2', '11', '14', '23', '29'] },
+  { label: 'Autre', codes: ['30', '6', '8', '5', '7', '31', '24', '26'] },
+]
 
-const PRESETS = {
-  // Matin (bureau, agence, TLT, TLT agence, Win11)
-  '0':  S_MATIN,   // Matin
-  '9':  S_MATIN,   // Agence Matin
-  '20': S_MATIN,   // TLT Matin
-  '12': S_MATIN,   // TLT Agence Matin
-  '28': S_MATIN,   // MatinW11
-  // Midi
-  '1':  S_MIDI,    // Midi
-  '10': S_MIDI,    // Agence Midi
-  '21': S_MIDI,    // TLT Midi
-  '13': S_MIDI,    // TLT Agence Midi
-  // Après-midi
-  '15': S_APREM,   // Aprem
-  '16': S_APREM,   // Agence APREM
-  '22': S_APREM,   // TLT APREM
-  '17': S_APREM,   // TLT Agence APREM
-  // Soir
-  '2':  S_SOIR,    // Soir
-  '11': S_SOIR,    // Agence Soir
-  '23': S_SOIR,    // TLT Soir
-  '14': S_SOIR,    // TLT Agence Soir
-  '29': S_SOIR,    // SoirW11
-  // Autres
-  '26': S_PILOTEBO, // PiloteBO
-}
+/* ── Presets créneaux (importés depuis adminStore) ── */
+const PRESETS = QUICK_PRESETS
 
 function onCodeChange() {
   newBlock.value.startSlot = 0
@@ -527,24 +603,51 @@ function onCodeChange() {
   overlapError.value = ''
 }
 
+/* ── Sélection via chip ── */
+// Mémorise le code dont le preset a été auto-appliqué (null = modif manuelle)
+const autoFilledCode = ref(null)
+
+function selectCode(code) {
+  if (newBlock.value.code === code) return
+
+  // Si le remplissage actuel vient d'un auto-preset non modifié → on le retire
+  if (autoFilledCode.value !== null) {
+    blocks.value = []
+    autoFilledCode.value = null
+  }
+
+  newBlock.value.code = code
+  onCodeChange()
+
+  // Auto-apply si journée vide et preset dispo
+  if (blocks.value.length === 0 && PRESETS[code]) {
+    applyPreset()
+    autoFilledCode.value = code  // marqué après applyPreset (qui le reset à null)
+  }
+}
+function selectEditCode(code) {
+  editingBlock.value.code = code
+  editError.value = ''
+}
+
+/* ── Couleur chip (rgba → opacité réduite pour background) ── */
+function chipBg(couleur) {
+  return couleur.replace(/,\s*[\d.]+\s*\)/, ', 0.14)')
+}
+
 function applyPreset() {
   overlapError.value = ''
   const preset = PRESETS[newBlock.value.code]
   if (!preset) return
 
-  // Vérifie les chevauchements avec les blocs existants
-  const hasOverlap = preset.some(p =>
-    blocks.value.some(b => p.startSlot < b.endSlot && p.endSlot > b.startSlot)
+  // Retire les blocs existants qui chevauchent le preset, conserve les autres
+  const kept = blocks.value.filter(b =>
+    !preset.some(p => p.startSlot < b.endSlot && p.endSlot > b.startSlot)
   )
-  if (hasOverlap) {
-    overlapError.value = 'Ces créneaux chevauchent une activité existante.'
-    return
-  }
-
   const newBlocks = preset.map(p => ({ code: newBlock.value.code, ...p }))
-  blocks.value = [...blocks.value, ...newBlocks]
-    .sort((a, b) => a.startSlot - b.startSlot)
+  blocks.value = [...kept, ...newBlocks].sort((a, b) => a.startSlot - b.startSlot)
   newBlock.value = { code: '', startSlot: 0, endSlot: 4 }
+  autoFilledCode.value = null  // clic manuel → ne plus remplacer au prochain chip
 }
 
 /* ── Label date ── */
@@ -601,11 +704,13 @@ function addBlock() {
   blocks.value = [...blocks.value, { code, startSlot, endSlot }]
     .sort((a, b) => a.startSlot - b.startSlot)
   newBlock.value = { code: '', startSlot: endSlot, endSlot: Math.min(endSlot + 4, 44) }
+  autoFilledCode.value = null
 }
 
 function removeBlock(i) {
   if (editingIdx.value === i) cancelEdit()
   blocks.value = blocks.value.filter((_, idx) => idx !== i)
+  autoFilledCode.value = null
 }
 
 /* ── Édition inline d'un bloc existant ── */
@@ -647,6 +752,7 @@ function confirmEdit() {
     editError.value = 'Ce créneau chevauche une autre activité.'
     return
   }
+  autoFilledCode.value = null
   blocks.value = blocks.value
     .map((b, i) => i === editingIdx.value ? { code, startSlot, endSlot } : b)
     .sort((a, b) => a.startSlot - b.startSlot)

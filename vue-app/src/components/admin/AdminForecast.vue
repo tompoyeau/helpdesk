@@ -61,6 +61,12 @@
         <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:8px">
           Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi
         </span>
+        <!-- Option absences base test -->
+        <label class="opt-test-absences" :class="{ active: useTestAbsences }">
+          <input type="checkbox" v-model="useTestAbsences" style="display:none" />
+          <FlaskConical :size="12" />
+          Absences base TEST
+        </label>
         <button class="btn-preview" style="margin-left:auto" :disabled="fc.previewing || dataLoading" @click="doPreview">
           <div v-if="fc.previewing" class="btn-spinner"></div>
           <Eye v-else :size="14" />
@@ -552,6 +558,17 @@
 }
 .opt-group { display: flex; align-items: center; gap: 8px; }
 .opt-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.opt-test-absences {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; font-size: 0.75rem; font-weight: 600;
+  border: 1.5px solid var(--border); border-radius: 999px;
+  color: var(--text-muted); cursor: pointer;
+  transition: all 0.15s; white-space: nowrap; user-select: none;
+}
+.opt-test-absences:hover { background: var(--bg-hover); color: var(--text); }
+.opt-test-absences.active {
+  border-color: #a78bfa; background: rgba(167,139,250,0.12); color: #a78bfa;
+}
 .stepper { display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .stepper-btn {
   width: 26px; height: 26px; border: none; background: var(--bg-surface);
@@ -933,13 +950,13 @@ const testMode  = ref(false)
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useForecastStore, SHIFT_COLORS } from '@/stores/forecastStore'
+import { useForecastStore, SHIFT_COLORS, loadAbsencesFromCollection } from '@/stores/forecastStore'
 import { useUserStore }                   from '@/stores/userStore'
 import { useDataStore }                   from '@/stores/dataStore'
 import {
   Upload, FileSpreadsheet, X, Eye, Wand2, Undo2,
   AlertTriangle, CheckCircle2, SkipForward, BarChart2,
-  ChevronLeft, ChevronRight, PieChart, Info,
+  ChevronLeft, ChevronRight, PieChart, Info, FlaskConical,
 } from 'lucide-vue-next'
 
 const fc        = useForecastStore()
@@ -948,6 +965,7 @@ const data      = useDataStore()
 
 const fileInput   = ref(null)
 const dragOver    = ref(false)
+const useTestAbsences = ref(false)   // lire les absences depuis plannings_test
 // overwrite et testMode sont définis en module-scope (persistants entre onglets)
 const genProgress  = ref(0)
 const genTotal     = ref(0)
@@ -1066,12 +1084,20 @@ function onDrop(e) {
 }
 
 /* ── Preview ── */
-function doPreview() {
-  weekIdx.value    = 0
+async function doPreview() {
+  weekIdx.value     = 0
   editedCells.value = new Set()
+
+  let testAbsenceMap = null
+  if (useTestAbsences.value && fc.forecast) {
+    const dates = Object.keys(fc.forecast)
+    testAbsenceMap = await loadAbsencesFromCollection(dates, 'plannings_test')
+  }
+
   fc.previewPlanningWeekly({
-    persons:     userStore.users,
-    planningData: data.planning,
+    persons:       userStore.users,
+    planningData:  data.planning,
+    testAbsenceMap,
   })
 }
 

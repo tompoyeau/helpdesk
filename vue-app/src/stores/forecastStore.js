@@ -23,6 +23,11 @@ export const ETP_TABLE = {
   12: { matin: 3, midi: 3, aprem: 3, soir: 3 },
   11: { matin: 2, midi: 3, aprem: 3, soir: 3 },
   10: { matin: 2, midi: 2, aprem: 3, soir: 3 },
+   9: { matin: 2, midi: 2, aprem: 2, soir: 3 },
+   8: { matin: 2, midi: 2, aprem: 2, soir: 2 },
+   7: { matin: 1, midi: 2, aprem: 2, soir: 2 },
+   6: { matin: 1, midi: 1, aprem: 2, soir: 2 },
+   5: { matin: 1, midi: 1, aprem: 1, soir: 2 },
 }
 
 // [startSlot, endSlot] — endSlot exclusif, slots de 15 min depuis 8h00
@@ -138,8 +143,11 @@ function buildActivites(shiftName) {
 function resolveEtpDist(etpNum) {
   if (ETP_TABLE[etpNum]) return ETP_TABLE[etpNum]
   const keys = Object.keys(ETP_TABLE).map(Number).sort((a, b) => b - a)
+  // Clé la plus proche inférieure ou égale à etpNum
   const found = keys.find(k => k <= etpNum)
-  return ETP_TABLE[found] || ETP_TABLE[10]
+  // Fallback : clé minimale du tableau (jamais hardcodée)
+  const minKey = keys[keys.length - 1]
+  return ETP_TABLE[found] ?? ETP_TABLE[minKey]
 }
 
 // Retourne la clé ISO de la semaine : 'YYYY-WXX'
@@ -275,13 +283,46 @@ function computePersonStats(planningData, persons) {
 
 const ABSENCE_CATS = new Set(['CP', 'Indisponible', 'Récup', 'Formation'])
 
-function getAbsenceForDay(planningData, personName, iso) {
+// Codes Firestore → catégorie d'absence (pour lecture directe depuis plannings_test)
+const ABSENCE_CODE_MAP = { '30': 'CP', '6': 'Indisponible', '8': 'Récup', '5': 'Formation' }
+
+function getAbsenceForDay(planningData, personName, iso, testAbsenceMap = null) {
+  // Priorité : données de la base test si fournies
+  if (testAbsenceMap?.[personName]?.[iso] !== undefined) {
+    return testAbsenceMap[personName][iso] || null
+  }
   const entries = planningData?.[personName]?.[iso]
   if (!entries) return null
   for (const e of entries) {
     if (ABSENCE_CATS.has(e.categorie)) return e.categorie
   }
   return null
+}
+
+/* ── Charge les absences depuis une collection Firestore (ex: plannings_test) ──
+   Retourne { 'NOM Prenom': { 'yyyy-mm-dd': 'CP' | 'Indisponible' | 'Récup' | 'Formation' | '' } }
+   Une valeur '' signifie "présent, pas d'absence" — distingue "non chargé" de "pas d'absence". */
+export async function loadAbsencesFromCollection(forecastDates, collection = 'plannings_test') {
+  const admin = useAdminStore()
+  const result = {}   // { personName: { iso: categorie | '' } }
+
+  await Promise.all(forecastDates.map(async iso => {
+    try {
+      const [y, m, d] = iso.split('-').map(Number)
+      const dayId = admin.dateToId(new Date(y, m - 1, d))
+      const snap  = await getDoc(doc(db, collection, dayId))
+      if (!snap.exists()) return
+      for (const r of snap.data().ressources || []) {
+        const name    = `${r.nom} ${r.prenom}`
+        const absCode = (r.activites || []).find(a => a && ABSENCE_CODE_MAP[a])
+        const cat     = absCode ? ABSENCE_CODE_MAP[absCode] : ''
+        if (!result[name]) result[name] = {}
+        result[name][iso] = cat   // '' = présent sans absence
+      }
+    } catch { /* jour absent de la collection → ignoré */ }
+  }))
+
+  return result
 }
 
 function equityScore(history, personName, shift, lastWeekShift, noAssignStreak) {
@@ -600,7 +641,7 @@ export const useForecastStore = defineStore('forecast', () => {
   }
 
   /* ── Prévisualisation : assignation journalière ETP-stricte ── */
-  async function previewPlanningWeekly({ persons, planningData }) {
+  async function previewPlanningWeekly({ persons, planningData, testAbsenceMap = null }) {
     if (!forecast.value || !persons.length) return
     const admin = useAdminStore()
 
@@ -658,7 +699,7 @@ export const useForecastStore = defineStore('forecast', () => {
         const name = `${p.nom} ${p.prenom}`
         dayAbsences[name] = {}
         for (const iso of workDates) {
-          const cat = getAbsenceForDay(planningData, name, iso)
+          const cat = getAbsenceForDay(planningData, name, iso, testAbsenceMap)
           if (cat) dayAbsences[name][iso] = cat
         }
       }

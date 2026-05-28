@@ -25,11 +25,22 @@
 
       <!-- Toggle Semaine / Mois -->
       <div class="view-mode-toggle">
-        <button :class="['vm-btn', { 'vm-active': viewMode === 'week' }]" @click="viewMode = 'week'">Semaine</button>
-        <button :class="['vm-btn', { 'vm-active': viewMode === 'month' }]" @click="viewMode = 'month'">
+        <button :class="['vm-btn', { 'vm-active': viewMode === 'week' }]" @click="switchToWeek">Semaine</button>
+        <button :class="['vm-btn', { 'vm-active': viewMode === 'month' }]" @click="switchToMonth">
           <LayoutGrid :size="11" /> Mois
         </button>
       </div>
+
+      <!-- Mode rapide (vue mois uniquement) -->
+      <button
+        v-if="viewMode === 'month'"
+        class="btn-quick-mode"
+        :class="{ 'btn-quick-active': quickMode.active }"
+        @click="toggleQuickMode"
+      >
+        <Zap :size="12" />
+        {{ quickMode.active ? 'Quitter mode rapide' : 'Mode rapide' }}
+      </button>
 
       <!-- Nettoyer le mois (mode test uniquement) -->
       <button
@@ -131,15 +142,6 @@
         <div style="display:flex;gap:8px;align-items:center">
           <span v-if="admin.saving" style="font-size:0.75rem;color:var(--text-muted)">Enregistrement…</span>
           <span v-else-if="saveSuccess" class="save-success"><Check :size="12" /> Sauvegardé</span>
-          <button
-            class="btn-sort"
-            :class="{ 'btn-sort-active': sortByHoraire }"
-            title="Trier par type d'horaire"
-            @click="sortByHoraire = !sortByHoraire"
-          >
-            <ArrowUpDown :size="12" />
-            {{ sortByHoraire ? 'Catégorie' : 'Alphabétique' }}
-          </button>
         </div>
       </div>
 
@@ -148,69 +150,132 @@
       </div>
 
       <template v-else>
-        <div class="table-scroll-wrap">
-        <table class="w-full" style="font-size:0.8125rem;min-width:520px">
-          <thead>
-            <tr>
-              <th style="width:180px">Collaborateur</th>
-              <th>Activités prévues</th>
-              <th style="width:60px;text-align:center">Heures</th>
-              <th style="width:80px"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in mergedRessources" :key="r.idPersonne" class="row-clickable" @click="openDayEditor(r)">
-              <td>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div class="person-avatar" style="width:26px;height:26px;font-size:0.5625rem">
-                    {{ `${r.nom?.[0] ?? ''}${r.prenom?.[0] ?? ''}`.toUpperCase() }}
-                  </div>
-                  {{ r.nom }} {{ r.prenom }}
-                </div>
-              </td>
-              <td>
-                <div class="mini-timeline">
-                  <template v-for="(block, i) in getTimelineBlocks(r.activites)" :key="i">
-                    <div v-if="block.empty" class="tl-gap" :style="{ width: block.width + '%' }" />
-                    <div v-else class="tl-block"
-                      :style="{ width: block.width + '%', background: block.color }"
-                      :title="block.label"
-                    >
-                      <span v-if="block.width >= 10" class="tl-label" :style="{ color: block.textColor }">{{ block.label }}</span>
+
+        <!-- ── Palette de peinture ── -->
+        <div class="painter-palette">
+          <div v-for="group in PAINT_GROUPS" :key="group.label" class="paint-group">
+            <span class="paint-group-label">{{ group.label }}</span>
+            <button
+              v-for="code in group.codes"
+              :key="code"
+              class="paint-chip"
+              :class="{ 'paint-chip-active': paintCode === code }"
+              :style="paintCode === code
+                ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: ACTIVITY_MAPPING[code].couleur.replace(/,\s*1\s*\)/, ', 0.15)'), color: ACTIVITY_MAPPING[code].couleur }
+                : {}"
+              @click="paintCode = paintCode === code ? null : code"
+            >
+              <span class="paint-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
+              {{ ACTIVITY_MAPPING[code].categorie }}
+            </button>
+          </div>
+          <!-- Outil effaceur -->
+          <button
+            class="paint-chip paint-chip-erase"
+            :class="{ 'paint-chip-active': paintCode === 'erase' }"
+            @click="paintCode = paintCode === 'erase' ? null : 'erase'"
+          >
+            <Eraser :size="11" />
+            Effacer
+          </button>
+          <span v-if="paintCode" class="paint-hint">
+            {{ paintCode === 'erase' ? 'Glissez pour effacer' : 'Glissez pour peindre' }}
+          </span>
+          <span v-else class="paint-hint" style="opacity:0.5">Sélectionnez un outil</span>
+        </div>
+
+        <!-- ── Barre d'info live (apparaît pendant le drag) ── -->
+        <Transition name="paint-info">
+          <div v-if="isPainting && paintInfo" class="paint-info-bar">
+            <span class="paint-info-name">{{ paintInfo.name }}</span>
+            <span class="paint-info-sep">·</span>
+            <span class="paint-info-range">{{ paintInfo.startTime }} → {{ paintInfo.endTime }}</span>
+            <span class="paint-info-dur">{{ paintInfo.durStr }}</span>
+            <span
+              class="paint-info-act"
+              :style="paintCode !== 'erase' && ACTIVITY_MAPPING[paintCode]
+                ? { color: ACTIVITY_MAPPING[paintCode].couleur }
+                : { color: '#ef4444' }"
+            >{{ paintInfo.actLabel }}</span>
+          </div>
+        </Transition>
+
+        <!-- ── Grille de créneaux ── -->
+        <div class="table-scroll-wrap" :class="{ 'painter-active': !!paintCode }">
+          <table class="slot-painter-table">
+            <thead>
+              <tr class="slot-time-row">
+                <th class="slot-name-col"></th>
+                <th
+                  v-for="s in 45"
+                  :key="s - 1"
+                  class="slot-th"
+                  :class="{
+                    'slot-h-sep':  (s - 1) % 4 === 0,
+                    'slot-h2-sep': (s - 1) % 2 === 0 && (s - 1) % 4 !== 0,
+                  }"
+                >
+                  <!-- Heure pile (toutes les heures) -->
+                  <span v-if="(s - 1) % 4 === 0" class="slot-h-label">
+                    {{ TIME_SLOTS[s - 1]?.replace(':', 'h') }}
+                  </span>
+                  <!-- Demi-heure (toutes les 30 min) -->
+                  <span v-else-if="(s - 1) % 2 === 0" class="slot-h2-label">
+                    :30
+                  </span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="r in mergedRessources"
+                :key="r.idPersonne"
+                class="slot-row"
+              >
+                <!-- Colonne nom + heures + effacer -->
+                <td class="slot-name-col">
+                  <div class="slot-name-inner">
+                    <div class="person-avatar" style="width:22px;height:22px;font-size:0.5rem;flex-shrink:0">
+                      {{ `${r.nom?.[0]??''}${r.prenom?.[0]??''}`.toUpperCase() }}
                     </div>
-                  </template>
-                </div>
-              </td>
-              <td style="text-align:center">
-                <span v-if="calcHeures(r.activites) > 0" class="heures-badge">
-                  {{ fmtHeures(calcHeures(r.activites)) }}
-                </span>
-                <span v-else style="color:var(--text-subtle)">—</span>
-              </td>
-              <td>
-                <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">
-                  <template v-if="clearTarget === r.idPersonne">
-                    <span style="font-size:0.6875rem;color:var(--text-muted);white-space:nowrap">Effacer ?</span>
-                    <button class="btn-action btn-action-confirm" title="Confirmer" @click.stop="clearActivites(r)">
-                      <Check :size="12" />
+                    <span class="slot-name-text">{{ r.nom }} {{ r.prenom }}</span>
+                    <span v-if="slotHours(r) > 0" class="slot-hours-badge">{{ fmtHeures(slotHours(r)) }}</span>
+                    <div v-if="paintSaving.has(r.idPersonne)" class="btn-spinner-sm" style="margin-left:auto;flex-shrink:0"></div>
+                    <template v-else-if="clearTarget === r.idPersonne">
+                      <button class="btn-action btn-action-confirm" style="width:20px;height:20px;margin-left:auto" @click.stop="clearActivites(r)"><Check :size="11" /></button>
+                      <button class="btn-action" style="width:20px;height:20px" @click.stop="clearTarget = null"><X :size="11" /></button>
+                    </template>
+                    <button
+                      v-else-if="(r.activites||[]).some(a => a)"
+                      class="slot-clear-btn"
+                      title="Effacer"
+                      @click.stop="clearTarget = r.idPersonne"
+                    >
+                      <Eraser :size="10" />
                     </button>
-                    <button class="btn-action" title="Annuler" @click.stop="clearTarget = null">
-                      <X :size="12" />
-                    </button>
-                  </template>
-                  <button
-                    v-else-if="r.activites && r.activites.some(a => a && a !== '')"
-                    class="btn-action btn-action-danger"
-                    title="Effacer toutes les activités"
-                    @click.stop="clearTarget = r.idPersonne"
-                  >
-                    <Eraser :size="12" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                  </div>
+                </td>
+                <!-- 45 slots cliquables/peinturables -->
+                <td
+                  v-for="s in 45"
+                  :key="s - 1"
+                  class="slot-cell"
+                  :class="{
+                    'slot-h-sep':     (s - 1) % 4 === 0,
+                    'slot-h2-sep':    (s - 1) % 2 === 0 && (s - 1) % 4 !== 0,
+                    'slot-paintable': !!paintCode,
+                    'slot-dragging':  paintPersonId === r.idPersonne && isPainting
+                                        && (s - 1) >= Math.min(paintSlotStart, paintSlotEnd)
+                                        && (s - 1) <= Math.max(paintSlotStart, paintSlotEnd),
+                  }"
+                  :style="slotCellStyle(r, s - 1)"
+                  :title="`${TIME_SLOTS[s-1]} — ${getSlotCode(r, s-1) ? ACTIVITY_MAPPING[getSlotCode(r, s-1)]?.categorie || '' : 'vide'}`"
+                  @mousedown.prevent="onSlotMouseDown($event, r, s - 1)"
+                  @mouseenter="onSlotMouseEnter(r, s - 1)"
+                ></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <!-- ── Équipe Covéa (MACA/ALRE) + ETP ── -->
@@ -239,7 +304,47 @@
 
     <!-- ══ Vue Mois ══ -->
     <template v-else>
-      <div class="month-matrix-outer">
+
+      <!-- Barre mode rapide -->
+      <Transition name="quick-bar">
+        <div v-if="quickMode.active" class="quick-bar">
+          <span class="quick-bar-hint">
+            <Zap :size="11" v-if="quickMode.code !== 'erase'" />
+            <Eraser :size="11" v-else />
+            {{ quickMode.code === 'erase' ? 'Cliquez pour effacer' : quickMode.code ? 'Cliquez une cellule pour assigner' : 'Choisissez un horaire' }}
+          </span>
+          <div class="quick-bar-groups">
+            <div v-for="group in QUICK_CHIP_GROUPS" :key="group.label" class="quick-group">
+              <span class="quick-group-label">{{ group.label }}</span>
+              <button
+                v-for="code in group.codes"
+                :key="code"
+                class="quick-chip"
+                :class="{ 'quick-chip-selected': quickMode.code === code }"
+                :style="quickMode.code === code
+                  ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: ACTIVITY_MAPPING[code].couleur.replace(/,\s*[\d.]+\s*\)/, ', 0.18)') }
+                  : {}"
+                @click="selectQuickChip(code)"
+              >
+                <span class="quick-chip-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
+                {{ ACTIVITY_MAPPING[code].categorie }}
+              </button>
+            </div>
+            <!-- Gomme -->
+            <button
+              class="quick-chip quick-chip-erase"
+              :class="{ 'quick-chip-selected': quickMode.code === 'erase' }"
+              @click="selectQuickChip('erase')"
+            >
+              <Eraser :size="11" />
+              Effacer
+            </button>
+          </div>
+          <kbd class="quick-bar-esc" @click="toggleQuickMode">Esc</kbd>
+        </div>
+      </Transition>
+
+      <div class="month-matrix-outer" :class="{ 'quick-mode-active': quickMode.active && quickMode.code }">
 
 
         <!-- Indicateur de chargement -->
@@ -302,12 +407,26 @@
                 v-for="{ person, fullName } in monthPersonRows"
                 :key="person.id || fullName"
               >
-                <td class="mm-td-name">
-                  <div style="display:flex;align-items:center;gap:6px;overflow:hidden">
+                <td class="mm-td-name mm-td-name-clearable">
+                  <!-- Confirmation suppression -->
+                  <div v-if="clearPersonTarget === fullName" class="mm-clear-confirm">
+                    <span class="mm-clear-confirm-label">Tout effacer ?</span>
+                    <button class="mm-confirm-btn mm-confirm-yes" :disabled="clearingPerson" @click.stop="clearPersonMonth(fullName)">
+                      <Check :size="11" />
+                    </button>
+                    <button class="mm-confirm-btn mm-confirm-no" @click.stop="clearPersonTarget = null">
+                      <X :size="11" />
+                    </button>
+                  </div>
+                  <!-- Affichage normal -->
+                  <div v-else class="mm-name-row">
                     <div class="person-avatar" style="width:22px;height:22px;font-size:0.5rem;flex-shrink:0">
                       {{ `${person.nom?.[0]??''}${person.prenom?.[0]??''}`.toUpperCase() }}
                     </div>
                     <span class="mm-person-name">{{ person.nom }} {{ person.prenom }}</span>
+                    <button class="mm-clear-btn" title="Effacer tous les horaires du mois" @click.stop="clearPersonTarget = fullName">
+                      <Trash2 :size="11" />
+                    </button>
                   </div>
                 </td>
                 <td
@@ -315,17 +434,21 @@
                   :key="iso"
                   class="mm-cell"
                   :class="{
-                    'mm-week-sep':  monthWeekStarts.has(iso),
-                    'mm-cell-sam':  monthSamedis.has(iso),
-                    'mm-cell-ferie':monthFeries.has(iso),
-                    'mm-inactive':  monthMatrix[fullName]?.[iso]?.inactive,
-                    'mm-cell-load': monthMatrix[fullName]?.[iso]?.loading,
+                    'mm-week-sep':    monthWeekStarts.has(iso),
+                    'mm-cell-sam':    monthSamedis.has(iso),
+                    'mm-cell-ferie':  monthFeries.has(iso),
+                    'mm-inactive':    monthMatrix[fullName]?.[iso]?.inactive,
+                    'mm-cell-load':   monthMatrix[fullName]?.[iso]?.loading || quickSavingCells.has(`${fullName}|${iso}`),
+                    'mm-cell-quick':  quickMode.active && quickMode.code && !monthMatrix[fullName]?.[iso]?.inactive && !monthSamedis.has(iso),
+                    'mm-cell-dragging': isDragging && dragFullName === fullName && dragIsos.has(iso),
                   }"
                   :style="monthMatrix[fullName]?.[iso]?.bg
                     ? { background: monthMatrix[fullName][iso].bg, cursor: 'pointer' }
                     : undefined"
                   :title="`${fullName} · ${iso}`"
-                  @click="!monthMatrix[fullName]?.[iso]?.inactive && openMonthCell(fullName, iso)"
+                  @mousedown="onCellMouseDown($event, fullName, iso)"
+                  @mouseenter="onCellMouseEnter(fullName, iso)"
+                  @click="onCellClick(fullName, iso)"
                 >
                   <span
                     v-if="monthMatrix[fullName]?.[iso]?.label"
@@ -401,6 +524,53 @@
             <button class="btn-confirm-cancel" @click="confirmClearMonth = false">Annuler</button>
             <button class="btn-confirm-delete" @click="doClearMonth">
               <Trash2 :size="13" /> Supprimer
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Confirmation écrasement semaine -->
+    <Teleport to="body">
+      <div v-if="weekOverwriteModal.show" class="modal-backdrop" @click.self="resolveOverwrite('cancel')">
+        <div class="modal-confirm-box" style="max-width:460px">
+          <div class="modal-confirm-icon" style="color:#F59E0B;background:rgba(245,158,11,0.1)">
+            <CalendarCheck :size="22" />
+          </div>
+          <h3 class="modal-confirm-title">Horaires existants détectés</h3>
+          <p class="modal-confirm-body" style="margin-bottom:12px">
+            {{ weekOverwriteModal.subtitle || 'Les collaborateurs suivants ont déjà des horaires sur cette semaine :' }}
+          </p>
+
+          <!-- Liste des conflits -->
+          <div class="overwrite-conflict-list">
+            <div
+              v-for="c in weekOverwriteModal.conflicts"
+              :key="c.name"
+              class="overwrite-conflict-person"
+            >
+              <div class="overwrite-conflict-name">{{ c.name }}</div>
+              <div
+                v-for="d in c.days"
+                :key="d.dateLbl"
+                class="overwrite-conflict-day"
+              >
+                <span class="overwrite-day-lbl">{{ d.dateLbl }}</span>
+                <span class="overwrite-day-type">{{ d.types }}</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="modal-confirm-body" style="margin-top:12px">Que souhaitez-vous faire ?</p>
+          <div class="modal-confirm-actions" style="flex-direction:column;gap:8px">
+            <button class="btn-save" style="width:100%;justify-content:center" @click="resolveOverwrite('overwrite')">
+              {{ weekOverwriteModal.labelOverwrite || 'Tout écraser' }}
+            </button>
+            <button v-if="!weekOverwriteModal.noEmptyOnly" class="btn-confirm-cancel" style="width:100%;justify-content:center" @click="resolveOverwrite('empty_only')">
+              Remplir les jours vides uniquement
+            </button>
+            <button class="btn-confirm-cancel" style="width:100%;justify-content:center;color:var(--text-muted)" @click="resolveOverwrite('cancel')">
+              Annuler
             </button>
           </div>
         </div>
@@ -670,7 +840,7 @@
   padding: 5px 2px; text-align: center;
   background: var(--bg-surface);
   border-bottom: 2px solid var(--border);
-  border-left: 1px solid transparent;
+  border-left: 1px solid var(--border);
   min-width: 40px;
 }
 .mm-dow {
@@ -681,13 +851,13 @@
 .mm-dm {
   font-size: 0.6875rem; font-weight: 600; color: var(--text);
 }
-.mm-week-sep { border-left: 2px solid var(--border) !important; }
+.mm-week-sep { border-left: 2px solid var(--text-muted) !important; }
 
 .mm-cell {
   height: 28px; width: 40px; padding: 0;
   text-align: center; vertical-align: middle;
   border-bottom: 1px solid var(--border);
-  border-left: 1px solid transparent;
+  border-left: 1px solid var(--border);
   cursor: pointer;
   transition: filter 0.1s;
 }
@@ -812,6 +982,123 @@
 }
 
 
+/* ── Suppression personne vue mois ── */
+.mm-td-name-clearable { overflow: visible !important; }
+
+.mm-name-row {
+  display: flex; align-items: center; gap: 6px; overflow: hidden;
+}
+.mm-clear-btn {
+  display: none;
+  align-items: center; justify-content: center;
+  margin-left: auto; flex-shrink: 0;
+  width: 20px; height: 20px;
+  background: none; border: none; border-radius: 4px;
+  color: var(--text-muted); cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mm-clear-btn:hover { background: color-mix(in srgb, #ef4444 12%, var(--bg-surface)); color: #ef4444; }
+.mm-td-name-clearable:hover .mm-clear-btn { display: flex; }
+
+.mm-clear-confirm {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 2px;
+}
+.mm-clear-confirm-label {
+  font-size: 0.6rem; font-weight: 600; color: #ef4444; white-space: nowrap; flex: 1;
+}
+.mm-confirm-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 4px;
+  border: none; cursor: pointer; flex-shrink: 0;
+  transition: background 0.12s;
+}
+.mm-confirm-yes { background: #ef444422; color: #ef4444; }
+.mm-confirm-yes:hover { background: #ef4444; color: #fff; }
+.mm-confirm-no  { background: var(--bg-hover); color: var(--text-muted); }
+.mm-confirm-no:hover  { background: var(--border); }
+
+/* ── Mode rapide ── */
+.btn-quick-mode {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 600;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-quick-mode:hover { background: var(--bg-hover); color: var(--text); }
+.btn-quick-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface)) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+.quick-bar {
+  display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 6px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-md);
+}
+.quick-bar-hint {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.75rem; font-weight: 600; color: var(--accent);
+  white-space: nowrap; padding-top: 2px; flex-shrink: 0;
+}
+.quick-bar-groups {
+  display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; flex: 1;
+}
+.quick-group {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.quick-group-label {
+  font-size: 0.5625rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+  padding-right: 2px; white-space: nowrap;
+}
+.quick-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 500;
+  border: 1.5px solid var(--border); border-radius: 999px;
+  background: var(--bg-surface); color: var(--text);
+  cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.quick-chip:hover { background: var(--bg-hover); }
+.quick-chip-selected { font-weight: 700; }
+.quick-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.quick-chip-erase { color: var(--text-muted); }
+.quick-chip-erase:hover { background: rgba(239,68,68,0.08); color: #ef4444; border-color: rgba(239,68,68,0.3); }
+.quick-chip-erase.quick-chip-selected { border-color: #ef4444; background: rgba(239,68,68,0.12); color: #ef4444; }
+.quick-bar-esc {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; font-size: 0.6875rem; font-family: var(--font-mono);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--text-muted); cursor: pointer;
+  transition: background 0.12s; white-space: nowrap; flex-shrink: 0;
+}
+.quick-bar-esc:hover { background: var(--bg-hover); color: var(--text); }
+
+/* Cellule ciblable en mode rapide */
+.mm-cell-quick { cursor: crosshair !important; }
+.quick-mode-active .mm-cell-quick:hover {
+  filter: brightness(1.12) saturate(1.1);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* Cellule sélectionnée par le drag */
+.mm-cell-dragging {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-card)) !important;
+  cursor: crosshair !important;
+}
+/* Désactive la sélection de texte pendant le drag */
+.quick-mode-active { user-select: none; }
+
+/* Transition barre mode rapide */
+.quick-bar-enter-active, .quick-bar-leave-active { transition: all 0.2s ease; }
+.quick-bar-enter-from, .quick-bar-leave-to { opacity: 0; transform: translateY(-6px); }
+
 .btn-clear-month {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 11px; font-size: 0.75rem; font-weight: 600;
@@ -852,6 +1139,38 @@
   line-height: 1.5; margin: 0;
 }
 .modal-confirm-actions { display: flex; gap: 10px; margin-top: 8px; }
+
+/* Liste des conflits d'écrasement */
+.overwrite-conflict-list {
+  width: 100%;
+  max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-size: 0.8125rem;
+}
+.overwrite-conflict-person {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.overwrite-conflict-person:last-child { border-bottom: none; }
+.overwrite-conflict-name {
+  font-weight: 700; color: var(--text);
+  margin-bottom: 4px;
+}
+.overwrite-conflict-day {
+  display: flex; align-items: center; gap: 10px;
+  padding: 2px 0;
+}
+.overwrite-day-lbl {
+  font-family: var(--font-mono); font-size: 0.75rem;
+  color: var(--text-muted); min-width: 72px; flex-shrink: 0;
+}
+.overwrite-day-type {
+  color: var(--text); font-size: 0.75rem;
+  background: var(--accent-light); color: var(--accent);
+  padding: 1px 8px; border-radius: 999px; font-weight: 600;
+}
 .btn-confirm-cancel {
   padding: 8px 18px; font-size: 0.8125rem; font-weight: 600;
   background: var(--bg); border: 1px solid var(--border);
@@ -867,6 +1186,161 @@
   transition: background 0.15s;
 }
 .btn-confirm-delete:hover { background: #dc2626; }
+
+/* ══ Palette de peinture ══ */
+.painter-palette {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.paint-group {
+  display: flex; align-items: center; gap: 3px;
+}
+.paint-group-label {
+  font-size: 0.5625rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+  padding-right: 3px; white-space: nowrap;
+  border-right: 1px solid var(--border); margin-right: 3px;
+}
+.paint-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 500;
+  border: 1.5px solid var(--border); border-radius: 999px;
+  background: var(--bg-surface); color: var(--text);
+  cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.paint-chip:hover { background: var(--bg-hover); }
+.paint-chip-active { font-weight: 700; }
+.paint-chip-erase {
+  color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;
+}
+.paint-chip-erase.paint-chip-active {
+  border-color: #ef4444; background: rgba(239,68,68,0.1); color: #ef4444;
+}
+.paint-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.paint-hint {
+  font-size: 0.6875rem; color: var(--accent); font-style: italic;
+  margin-left: 4px; white-space: nowrap;
+}
+
+/* ══ Grille de slots ══ */
+.slot-painter-table {
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  user-select: none;
+}
+.slot-time-row th { padding: 0; border: none; background: var(--bg-surface); }
+.slot-name-col {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--bg-card);
+  border-right: 2px solid var(--border);
+  width: 190px; min-width: 190px; max-width: 190px;
+  padding: 0;
+}
+.slot-th {
+  width: 20px; min-width: 20px; max-width: 20px;
+  text-align: left; vertical-align: bottom;
+  padding: 0;
+  border-left: 1px solid transparent;
+}
+/* Heure pile : trait épais bien visible */
+.slot-th.slot-h-sep  { border-left: 2px solid var(--text-muted) !important; }
+/* Demi-heure : trait intermédiaire */
+.slot-th.slot-h2-sep { border-left: 1px solid var(--border) !important; }
+.slot-h-label {
+  display: block;
+  font-size: 0.5rem; font-weight: 700; color: var(--text);
+  padding: 2px 0 1px 2px;
+  white-space: nowrap;
+}
+.slot-h2-label {
+  display: block;
+  font-size: 0.45rem; color: var(--text-muted); opacity: 0.55;
+  padding: 2px 0 1px 2px;
+  white-space: nowrap;
+}
+.slot-row { border-bottom: 1px solid var(--border); }
+.slot-name-inner {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 8px; overflow: hidden;
+}
+.slot-name-text {
+  font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; flex: 1; min-width: 0;
+}
+.slot-hours-badge {
+  font-size: 0.625rem; font-weight: 700; font-family: var(--font-mono);
+  color: var(--accent); white-space: nowrap; flex-shrink: 0;
+}
+.slot-clear-btn {
+  display: none;
+  align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex-shrink: 0;
+  background: none; border: none; border-radius: 4px;
+  color: var(--text-muted); cursor: pointer; transition: all 0.12s;
+}
+.slot-clear-btn:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
+.slot-name-inner:hover .slot-clear-btn { display: flex; }
+
+.slot-cell {
+  width: 20px; min-width: 20px; max-width: 20px;
+  height: 32px;
+  /* Séparateur 15 min visible dans les deux modes */
+  border-left: 1px solid var(--border);
+  border-bottom: none;
+  transition: filter 0.05s;
+  padding: 0;
+}
+/* Heure pile : trait épais bien visible + fond de colonne */
+.slot-cell.slot-h-sep  {
+  border-left: 2px solid var(--text-muted);
+  background-color: rgba(128,128,128,0.06);
+}
+/* Demi-heure : trait un peu plus soutenu que les 15 min */
+.slot-cell.slot-h2-sep { border-left: 1px solid var(--text-muted); }
+.slot-cell:not([style]) { background: var(--bg-surface); }
+.slot-cell.slot-paintable { cursor: crosshair; }
+.slot-cell.slot-paintable:hover { filter: brightness(1.15); outline: 1px solid rgba(99,102,241,0.5); outline-offset: -1px; }
+.slot-cell.slot-dragging {
+  outline: 1.5px solid var(--accent) !important;
+  outline-offset: -1px;
+  filter: brightness(1.1) saturate(1.2);
+}
+/* Désactive sélection texte pendant le drag */
+.painter-active { user-select: none; }
+
+/* ── Barre d'info live (drag peinture) ── */
+.paint-info-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 14px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  overflow: hidden;
+}
+.paint-info-name {
+  font-weight: 600; color: var(--text); white-space: nowrap;
+}
+.paint-info-sep { color: var(--text-muted); }
+.paint-info-range {
+  font-family: var(--font-mono); font-size: 0.6875rem;
+  color: var(--text); white-space: nowrap;
+}
+.paint-info-dur {
+  font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 700;
+  color: var(--accent); white-space: nowrap;
+}
+.paint-info-act {
+  font-weight: 600; white-space: nowrap; margin-left: auto;
+}
+/* Transition glisse depuis le haut */
+.paint-info-enter-active,
+.paint-info-leave-active { transition: opacity 0.15s, transform 0.15s; }
+.paint-info-enter-from,
+.paint-info-leave-to     { opacity: 0; transform: translateY(-4px); }
 </style>
 
 <script>
@@ -878,12 +1352,12 @@ const monthOffset = ref(0)        // mois relatif au mois courant
 </script>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
   Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2,
 } from 'lucide-vue-next'
-import { useAdminStore, ETP_CODES } from '@/stores/adminStore'
+import { useAdminStore, ETP_CODES, QUICK_PRESETS, TIME_SLOTS } from '@/stores/adminStore'
 import { parseEtpFromExcel } from '@/stores/forecastStore'
 import { useUserStore } from '@/stores/userStore'
 import { useDataStore, ACTIVITY_MAPPING, HORAIRE_RANK } from '@/stores/dataStore'
@@ -899,8 +1373,263 @@ const data      = useDataStore()
 const etpFileInput     = ref(null)
 const etpImporting     = ref(false)
 const etpImportMsg     = ref('')   // feedback message
-const confirmClearMonth = ref(false)
-const clearingMonth    = ref(false)
+const confirmClearMonth  = ref(false)
+const clearingMonth      = ref(false)
+const clearPersonTarget  = ref(null)   // fullName en attente de confirmation
+const weekOverwriteModal = ref({ show: false, resolve: null, conflicts: [], subtitle: '', labelOverwrite: '', noEmptyOnly: false })
+
+/* ══ Mode rapide ══ */
+const quickMode        = ref({ active: false, code: null })
+const quickSavingCells = ref(new Set())
+
+/* ── Drag (cliquer-glisser sur une ligne) ── */
+const isDragging   = ref(false)
+const dragFullName = ref(null)
+const dragIsos     = ref(new Set())
+
+const QUICK_CHIP_GROUPS = [
+  { label: 'Matin',   codes: ['0', '9', '12', '20', '28'] },
+  { label: 'Midi',    codes: ['1', '10', '13', '21'] },
+  { label: 'Aprem',   codes: ['15', '16', '17', '22', '27'] },
+  { label: 'Soir',    codes: ['2', '11', '14', '23', '29'] },
+  { label: 'Pilote',  codes: ['26'] },
+  { label: 'Absence', codes: ['30', '6', '8'] },
+]
+
+function toggleQuickMode() {
+  quickMode.value.active = !quickMode.value.active
+  if (!quickMode.value.active) quickMode.value.code = null
+}
+
+function selectQuickChip(code) {
+  quickMode.value.code = quickMode.value.code === code ? null : code
+}
+
+/* ── Gestion clic / drag cellule (vue mois) ── */
+function onCellMouseDown(event, fullName, iso) {
+  if (!quickMode.value.active || !quickMode.value.code) return
+  if (monthMatrix.value[fullName]?.[iso]?.inactive) return
+  if (monthSamedis.value.has(iso) || monthFeries.value.has(iso)) return
+  event.preventDefault()
+  isDragging.value  = true
+  dragFullName.value = fullName
+  dragIsos.value    = new Set([iso])
+}
+
+function onCellMouseEnter(fullName, iso) {
+  if (!isDragging.value || fullName !== dragFullName.value) return
+  if (monthMatrix.value[fullName]?.[iso]?.inactive) return
+  if (monthSamedis.value.has(iso) || monthFeries.value.has(iso)) return
+  dragIsos.value = new Set([...dragIsos.value, iso])
+}
+
+function onCellClick(fullName, iso) {
+  if (monthMatrix.value[fullName]?.[iso]?.inactive) return
+  if (quickMode.value.active && quickMode.value.code) {
+    quickAssignCell(fullName, iso)
+  } else if (!quickMode.value.active) {
+    openMonthCell(fullName, iso)
+  }
+}
+
+async function endDrag() {
+  if (!isDragging.value) return
+  const code     = quickMode.value.code
+  const isos     = [...dragIsos.value]
+  const fullName = dragFullName.value
+  isDragging.value  = false
+  dragFullName.value = null
+  dragIsos.value    = new Set()
+  // Un seul cell → le click event s'en charge
+  if (!code || !fullName || isos.length <= 1) return
+  for (const iso of isos) await quickAssignCell(fullName, iso)
+}
+
+async function quickAssignCell(fullName, iso) {
+  const code = quickMode.value.code
+  if (!code) return
+  const cellKey = `${fullName}|${iso}`
+  if (quickSavingCells.value.has(cellKey)) return
+
+  const [y, m, d] = iso.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+
+  quickSavingCells.value = new Set([...quickSavingCells.value, cellKey])
+  try {
+    const dayResult = await admin.loadDayPlanning(date)
+    const person    = monthPersons.value.find(p => `${p.nom} ${p.prenom}` === fullName)
+    if (!person) return
+
+    let newActivites
+    if (code === 'erase') {
+      newActivites = new Array(45).fill('')
+    } else {
+      const preset = QUICK_PRESETS[code]
+      if (!preset) return
+
+      const existing     = dayResult.ressources?.find(r => `${r.nom} ${r.prenom}` === fullName)
+      const curActivites = existing?.activites || new Array(45).fill('')
+
+      // Applique le preset (remplace les blocs qui chevauchent, garde les autres)
+      const curBlocks = admin.parseBlocks(curActivites)
+      const kept      = curBlocks.filter(b => !preset.some(p => p.startSlot < b.endSlot && p.endSlot > b.startSlot))
+      const newBlocks = [...kept, ...preset.map(p => ({ code, ...p }))].sort((a, b) => a.startSlot - b.startSlot)
+      newActivites    = admin.buildActivites(newBlocks)
+    }
+
+    const resource   = { nom: person.nom, prenom: person.prenom, idPersonne: person.id || person.uid, activites: newActivites }
+    const ressources = [...(dayResult.ressources || []).filter(r => `${r.nom} ${r.prenom}` !== fullName), resource]
+
+    await admin.saveDayPlanning(date, ressources)
+
+    const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+             + Object.keys(dayResult.fixed || {}).length
+    dayStatus.value = { ...dayStatus.value, [fmtId(date)]: { state: 'exists', filledCount: fc, total: ressources.length } }
+
+    updateMonthDay(iso, ressources, fc)
+  } finally {
+    const next = new Set(quickSavingCells.value)
+    next.delete(cellKey)
+    quickSavingCells.value = next
+  }
+}
+
+function askOverwriteMode(conflicts = [], { subtitle = '', labelOverwrite = '', noEmptyOnly = false } = {}) {
+  return new Promise(resolve => {
+    weekOverwriteModal.value = { show: true, resolve, conflicts, subtitle, labelOverwrite, noEmptyOnly }
+  })
+}
+function resolveOverwrite(mode) {
+  const { resolve } = weekOverwriteModal.value
+  weekOverwriteModal.value = { show: false, resolve: null }
+  resolve(mode)
+}
+const clearingPerson    = ref(false)
+
+/* ══ Peinture de créneaux (vue semaine) ══ */
+const paintCode      = ref(null)   // code activité, 'erase', ou null
+const isPainting     = ref(false)
+const paintPersonId  = ref(null)
+const paintSlotStart = ref(0)
+const paintSlotEnd   = ref(0)
+const paintBuffer    = ref({})     // { idPersonne: activites[] } — buffer pendant le drag
+const paintSaving    = ref(new Set())
+
+const PAINT_GROUPS = [
+  { label: 'Matin',   codes: ['0', '9', '12', '20', '28'] },
+  { label: 'Midi',    codes: ['1', '10', '13', '21'] },
+  { label: 'Aprem',   codes: ['15', '16', '17', '22', '27'] },
+  { label: 'Soir',    codes: ['2', '11', '14', '23', '29'] },
+  { label: 'Pilote',  codes: ['24', '26'] },
+  { label: 'Absence', codes: ['30', '6', '8'] },
+  { label: 'Autre',   codes: ['5', '7', '31'] },
+]
+
+/** Retourne le code du slot (buffer en priorité pendant le drag) */
+function getSlotCode(r, slot) {
+  const buf = paintBuffer.value[r.idPersonne]
+  if (buf) return buf[slot] || ''
+  return r.activites?.[slot] || ''
+}
+
+/** Style de fond d'un slot */
+function slotCellStyle(r, slot) {
+  const code = getSlotCode(r, slot)
+  if (!code) return {}
+  const mapping = ACTIVITY_MAPPING[String(code)]
+  if (!mapping) return {}
+  return { background: mapping.couleur.replace(/,\s*1\s*\)/, ', 0.82)') }
+}
+
+/** Heures travaillées (lit le buffer si en cours de peinture) */
+function slotHours(r) {
+  const acts = paintBuffer.value[r.idPersonne] || r.activites || []
+  return calcHeures(acts)
+}
+
+/** Info live affichée pendant le drag */
+const paintInfo = computed(() => {
+  if (!isPainting.value || paintPersonId.value === null) return null
+  const s    = Math.min(paintSlotStart.value, paintSlotEnd.value)
+  const e    = Math.max(paintSlotStart.value, paintSlotEnd.value)
+  const r    = mergedRessources.value.find(x => x.idPersonne === paintPersonId.value)
+  const name = r ? `${r.nom} ${r.prenom}` : ''
+  const startTime = TIME_SLOTS[s] ?? ''
+  // On affiche la fin du dernier slot (slot + 1, ou le temps du slot lui-même + 15 min)
+  const nextIdx   = Math.min(e + 1, 44)
+  const endTime   = e + 1 < TIME_SLOTS.length ? TIME_SLOTS[e + 1] : TIME_SLOTS[e]
+  const durMin    = (e - s + 1) * 15
+  const h = Math.floor(durMin / 60), m = durMin % 60
+  const durStr    = m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`
+  const actLabel  = paintCode.value === 'erase'
+    ? 'Effacer'
+    : (ACTIVITY_MAPPING[paintCode.value]?.categorie ?? paintCode.value)
+  return { name, startTime, endTime, durStr, actLabel }
+})
+
+/** Met à jour le buffer de slots entre start et end */
+function applyPaintBuffer() {
+  const id  = paintPersonId.value
+  const buf = [...(paintBuffer.value[id] || new Array(45).fill(''))]
+  const s   = Math.min(paintSlotStart.value, paintSlotEnd.value)
+  const e   = Math.max(paintSlotStart.value, paintSlotEnd.value)
+  for (let i = s; i <= e; i++) {
+    buf[i] = paintCode.value === 'erase' ? '' : String(paintCode.value)
+  }
+  paintBuffer.value = { ...paintBuffer.value, [id]: buf }
+}
+
+function onSlotMouseDown(event, r, slot) {
+  if (!paintCode.value) return
+  isPainting.value     = true
+  paintPersonId.value  = r.idPersonne
+  paintSlotStart.value = slot
+  paintSlotEnd.value   = slot
+  // Initialise le buffer depuis les activités actuelles
+  paintBuffer.value = { ...paintBuffer.value, [r.idPersonne]: [...(r.activites || new Array(45).fill(''))] }
+  applyPaintBuffer()
+}
+
+function onSlotMouseEnter(r, slot) {
+  if (!isPainting.value || r.idPersonne !== paintPersonId.value) return
+  paintSlotEnd.value = slot
+  applyPaintBuffer()
+}
+
+async function endPaint() {
+  if (!isPainting.value) return
+  isPainting.value = false
+  const id = paintPersonId.value
+  paintPersonId.value = null
+  if (!id || !paintBuffer.value[id]) return
+
+  const activites = paintBuffer.value[id]
+
+  // Vide le buffer
+  const newBuf = { ...paintBuffer.value }
+  delete newBuf[id]
+  paintBuffer.value = newBuf
+
+  // Applique dans dayData et sauvegarde
+  applyActivitesToRessource(id, activites)
+
+  paintSaving.value = new Set([...paintSaving.value, id])
+  try {
+    await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
+    saveSuccess.value = true
+    setTimeout(() => { saveSuccess.value = false }, 3000)
+    const fc = mergedRessources.value.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+             + Object.keys(dayFixed.value).length
+    const iso = fmtIso(selectedDate.value)
+    dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { ...dayStatus.value[fmtId(selectedDate.value)], state: 'exists', filledCount: fc, total: mergedRessources.value.length } }
+    updateMonthDay(iso, mergedRessources.value, fc)
+  } finally {
+    const next = new Set(paintSaving.value)
+    next.delete(id)
+    paintSaving.value = next
+  }
+}
+
 
 async function onEtpFile(e) {
   const file = e.target.files?.[0]
@@ -988,6 +1717,36 @@ async function toggleTestCollection() {
   }
 }
 
+/* ── Suppression des horaires d'une personne sur tout le mois ── */
+async function clearPersonMonth(fullName) {
+  clearPersonTarget.value = null
+  clearingPerson.value    = true
+  try {
+    const isosToClear = monthWorkDates.value.filter(iso => {
+      const d = monthData.value[iso]
+      return d?.state === 'loaded' && d.ressources?.some(r => `${r.nom} ${r.prenom}` === fullName)
+    })
+    await Promise.all(isosToClear.map(iso => {
+      const [y, m, d] = iso.split('-').map(Number)
+      const date         = new Date(y, m - 1, d)
+      const dayInfo      = monthData.value[iso]
+      const newRessources = dayInfo.ressources.map(r =>
+        `${r.nom} ${r.prenom}` === fullName
+          ? { ...r, activites: new Array(45).fill('') }
+          : r
+      )
+      const filledCount = newRessources.filter(r =>
+        (r.activites || []).some(a => a && ETP_CODES.has(String(a)))
+      ).length + Object.keys(dayInfo.fixed || {}).length
+      return admin.saveDayPlanning(date, newRessources).then(() => {
+        updateMonthDay(iso, newRessources, filledCount)
+      })
+    }))
+  } finally {
+    clearingPerson.value = false
+  }
+}
+
 /* ── Nettoyage du mois (mode test uniquement) ── */
 async function doClearMonth() {
   confirmClearMonth.value = false
@@ -1010,6 +1769,50 @@ function getMondayOf(offset) {
   const mon   = new Date(today)
   mon.setDate(today.getDate() + diff + offset * 7)
   return mon
+}
+
+function getMondayOfToday() {
+  const today = new Date()
+  const diff  = today.getDay() === 0 ? -6 : 1 - today.getDay()
+  const mon   = new Date(today)
+  mon.setDate(today.getDate() + diff)
+  return mon
+}
+
+// Retourne les 6 jours (Lun–Sam) de la semaine contenant `date`
+function getWeekDatesForDate(date) {
+  const dow     = date.getDay()
+  const daysToMon = dow === 0 ? -6 : 1 - dow
+  const monday  = new Date(date)
+  monday.setDate(date.getDate() + daysToMon)
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(monday); d.setDate(monday.getDate() + i); return d
+  })
+}
+
+// Semaine → Mois : on se place sur le mois de la semaine actuellement affichée
+function switchToMonth() {
+  const mon     = getMondayOf(weekOffset.value)
+  const today   = new Date()
+  const mDiff   = (mon.getFullYear() - today.getFullYear()) * 12 + (mon.getMonth() - today.getMonth())
+  monthOffset.value = mDiff
+  viewMode.value    = 'month'
+}
+
+// Mois → Semaine : on se place sur la 1re semaine du mois actuellement affiché
+function switchToWeek() {
+  const today    = new Date()
+  const firstDay = new Date(today.getFullYear(), today.getMonth() + monthOffset.value, 1)
+  // Lundi de la semaine contenant le 1er du mois
+  const dow = firstDay.getDay()
+  const daysToMon = dow === 0 ? -6 : 1 - dow
+  const targetMon = new Date(firstDay)
+  targetMon.setDate(firstDay.getDate() + daysToMon)
+  // Offset en semaines par rapport au lundi courant
+  const currentMon = getMondayOfToday()
+  const diffWeeks  = Math.round((targetMon - currentMon) / (7 * 24 * 60 * 60 * 1000))
+  weekOffset.value = diffWeeks
+  viewMode.value   = 'week'
 }
 
 const weekDates = computed(() => {
@@ -1075,13 +1878,27 @@ async function checkWeekStatus() {
 }
 
 // Chargement initial
+function onKeydown(e) {
+  if (e.key === 'Escape') {
+    if (quickMode.value.active) { quickMode.value.active = false; quickMode.value.code = null }
+    if (paintCode.value)        paintCode.value = null
+  }
+}
 onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('mouseup', endDrag)
+  window.addEventListener('mouseup', endPaint)
   if (viewMode.value === 'month') {
     loadMonthData()
   } else {
     checkWeekStatus()
     selectDay(weekDates.value[0])
   }
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('mouseup', endDrag)
+  window.removeEventListener('mouseup', endPaint)
 })
 
 // Changement de semaine (vue semaine uniquement)
@@ -1522,9 +2339,51 @@ function uidForId(idPersonne) {
 
 async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabsWholeWeek }) {
   try {
+    const mainId = editRessource.value.idPersonne
+
+    // ── Snapshot avant toute modification (pour rollback éventuel) ──
+    const snapshotIds = new Set([mainId, ...toCollabIds])
+    const snapshot = {}
+    for (const r of mergedRessources.value) {
+      if (snapshotIds.has(r.idPersonne)) snapshot[r.idPersonne] = [...(r.activites || [])]
+    }
+
+    // ── Vérification conflits sur le JOUR COURANT pour les collabs sélectionnés ──
+    // (doit avoir lieu avant toute écriture → rien à rollback si cancel)
+    let effectiveCollabIds = [...toCollabIds]
+    if (toCollabIds.length) {
+      const DAYS_LBL_C   = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
+      const MONTHS_LBL_C = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
+      const d0     = selectedDate.value
+      const dateLbl = `${DAYS_LBL_C[d0.getDay()]} ${d0.getDate()} ${MONTHS_LBL_C[d0.getMonth()]}`
+
+      const conflicting = toCollabIds.filter(id => {
+        const r = mergedRessources.value.find(r => r.idPersonne === id)
+        return r && (r.activites || []).some(a => a && a !== '')
+      })
+
+      if (conflicting.length) {
+        const currentConflicts = conflicting.map(id => {
+          const r = mergedRessources.value.find(r => r.idPersonne === id)
+          const blocks = admin.parseBlocks(r.activites || [])
+          const types  = [...new Set(blocks.map(b => ACTIVITY_MAPPING[b.code]?.categorie || b.code))].join(' · ')
+          return { name: `${r.nom} ${r.prenom}`, days: [{ dateLbl, types }] }
+        })
+
+        const mode = await askOverwriteMode(currentConflicts, {
+          subtitle:      'Ces collaborateurs ont déjà des horaires ce jour :',
+          labelOverwrite:'Écraser quand même',
+          noEmptyOnly:   false,
+        })
+        if (mode === 'cancel') return
+        if (mode === 'empty_only') effectiveCollabIds = toCollabIds.filter(id => !conflicting.includes(id))
+        // 'overwrite' → effectiveCollabIds inchangé (tous)
+      }
+    }
+
     // 1. Applique au collab courant + collabs sélectionnés (même jour)
-    applyActivitesToRessource(editRessource.value.idPersonne, activites)
-    for (const id of toCollabIds) {
+    applyActivitesToRessource(mainId, activites)
+    for (const id of effectiveCollabIds) {
       applyActivitesToRessource(id, activites)
     }
 
@@ -1539,7 +2398,9 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
     setTimeout(() => { saveSuccess.value = false }, 3000)
 
     const currentId = fmtId(selectedDate.value)
-    const otherDays = weekDates.value.filter(d =>
+    // Calcule les jours de la semaine contenant selectedDate (et non weekDates qui suit weekOffset)
+    const selectedWeekDates = getWeekDatesForDate(selectedDate.value)
+    const otherDays = selectedWeekDates.filter(d =>
       fmtId(d) !== currentId && d.getDay() !== 6 && !isFerie(d)
     )
 
@@ -1549,41 +2410,96 @@ async function onDaySaved({ activites, toCollabIds, applyWholeWeek, applyCollabs
     for (const date of notifDates)
       notifyPlanningChange(mainUid, fmtIso(date))
 
-    for (const id of toCollabIds) {
+    for (const id of effectiveCollabIds) {
       const uid = uidForId(id)
       const collabDates = [selectedDate.value, ...(applyCollabsWholeWeek ? otherDays : [])]
       for (const date of collabDates)
         notifyPlanningChange(uid, fmtIso(date))
     }
 
-    // 2. Applique sur toute la semaine pour le collab courant
-    if (applyWholeWeek) {
-      const meta = { ...editRessource.value, activites }
-      for (const date of otherDays) {
-        const result     = await admin.loadDayPlanning(date)
-        const ressources = result.ressources.filter(r => r.idPersonne !== meta.idPersonne)
-        ressources.push(meta)
-        await admin.saveDayPlanning(date, ressources)
-        const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
-                 + Object.keys(result.fixed || {}).length
-        dayStatus.value = { ...dayStatus.value, [fmtId(date)]: { state: 'exists', filledCount: fc, total: ressources.length } }
-        updateMonthDay(fmtIso(date), ressources, fc)
+    if (!applyWholeWeek && !applyCollabsWholeWeek) return
+
+    // 2. Pré-charge tous les autres jours en parallèle
+    const dayResults = await Promise.all(otherDays.map(d => admin.loadDayPlanning(d)))
+
+    // 3. Détecte si des horaires existent déjà pour les personnes concernées
+    const allIds  = new Set([
+      ...(applyWholeWeek          ? [mainId]             : []),
+      ...(applyCollabsWholeWeek   ? effectiveCollabIds   : []),
+    ])
+
+    // Construit la liste détaillée des conflits (par personne)
+    const DAYS_LBL   = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']
+    const MONTHS_LBL = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc']
+    const conflictMap = new Map()  // personName → [{ dateLabel, types }]
+
+    for (let i = 0; i < otherDays.length; i++) {
+      const d      = otherDays[i]
+      const result = dayResults[i]
+      const dateLbl = `${DAYS_LBL[d.getDay()]} ${d.getDate()} ${MONTHS_LBL[d.getMonth()]}`
+      for (const r of (result.ressources || [])) {
+        if (!allIds.has(r.idPersonne)) continue
+        if (!(r.activites || []).some(a => a && a !== '')) continue
+        const blocks = admin.parseBlocks(r.activites || [])
+        const types  = [...new Set(blocks.map(b => ACTIVITY_MAPPING[b.code]?.categorie || b.code))].join(' · ')
+        const name   = `${r.nom} ${r.prenom}`
+        if (!conflictMap.has(name)) conflictMap.set(name, [])
+        conflictMap.get(name).push({ dateLbl, types })
       }
     }
+    const conflicts = [...conflictMap.entries()].map(([name, days]) => ({ name, days }))
 
-    // 3. Applique sur toute la semaine pour les collabs sélectionnés
-    if (applyCollabsWholeWeek && toCollabIds.length) {
-      for (const date of otherDays) {
-        const result     = await admin.loadDayPlanning(date)
-        const ressources = [...result.ressources]
-        for (const id of toCollabIds) {
-          const collab = mergedRessources.value.find(r => r.idPersonne === id)
-          if (!collab) continue
-          const idx = ressources.findIndex(r => r.idPersonne === id)
-          const entry = { nom: collab.nom, prenom: collab.prenom, idPersonne: id, activites }
-          if (idx >= 0) ressources[idx] = entry
-          else ressources.push(entry)
+    const overwriteMode = conflicts.length ? await askOverwriteMode(conflicts) : 'overwrite'
+    if (overwriteMode === 'cancel') {
+      // ── Rollback : restaure le jour courant dans son état d'avant ──
+      for (const [id, prev] of Object.entries(snapshot)) {
+        applyActivitesToRessource(id, prev)
+      }
+      await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
+      const fcRollback = mergedRessources.value.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
+                       + Object.keys(dayFixed.value).length
+      dayStatus.value = { ...dayStatus.value, [fmtId(selectedDate.value)]: { ...dayStatus.value[fmtId(selectedDate.value)], filledCount: fcRollback, total: mergedRessources.value.length } }
+      updateMonthDay(currentIso, mergedRessources.value, fcRollback)
+      saveSuccess.value = false
+      return
+    }
+
+    // 4. Applique sur les autres jours (un seul passage)
+    for (let i = 0; i < otherDays.length; i++) {
+      const date       = otherDays[i]
+      const result     = dayResults[i]
+      const ressources = [...result.ressources]
+      let   changed    = false
+
+      if (applyWholeWeek) {
+        const meta    = { ...editRessource.value, activites }
+        const hasData = result.ressources?.some(r =>
+          r.idPersonne === mainId && (r.activites || []).some(a => a && a !== '')
+        )
+        if (overwriteMode === 'overwrite' || !hasData) {
+          const idx = ressources.findIndex(r => r.idPersonne === mainId)
+          if (idx >= 0) ressources[idx] = meta; else ressources.push(meta)
+          changed = true
         }
+      }
+
+      if (applyCollabsWholeWeek && effectiveCollabIds.length) {
+        for (const id of effectiveCollabIds) {
+          const collab  = mergedRessources.value.find(r => r.idPersonne === id)
+          if (!collab) continue
+          const hasData = result.ressources?.some(r =>
+            r.idPersonne === id && (r.activites || []).some(a => a && a !== '')
+          )
+          if (overwriteMode === 'overwrite' || !hasData) {
+            const entry = { nom: collab.nom, prenom: collab.prenom, idPersonne: id, activites }
+            const idx   = ressources.findIndex(r => r.idPersonne === id)
+            if (idx >= 0) ressources[idx] = entry; else ressources.push(entry)
+            changed = true
+          }
+        }
+      }
+
+      if (changed) {
         await admin.saveDayPlanning(date, ressources)
         const fc = ressources.filter(r => (r.activites || []).some(a => a && ETP_CODES.has(String(a)))).length
                  + Object.keys(result.fixed || {}).length

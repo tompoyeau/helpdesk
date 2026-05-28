@@ -8,6 +8,25 @@ import { TIME_SLOTS } from '@/stores/dataStore'
 
 export { TIME_SLOTS }
 
+/* ── Presets créneaux partagés (DayEditorModal + mode rapide) ── */
+const S_MATIN    = [{ startSlot: 0, endSlot: 16 }, { startSlot: 20, endSlot: 34 }]
+const S_MIDI     = [{ startSlot: 2, endSlot: 18 }, { startSlot: 22, endSlot: 36 }]
+const S_APREM    = [{ startSlot: 4, endSlot: 18 }, { startSlot: 22, endSlot: 38 }]
+const S_SOIR     = [{ startSlot: 5, endSlot: 21 }, { startSlot: 26, endSlot: 40 }]
+const S_PILOTEBO = [{ startSlot: 3, endSlot: 19 }, { startSlot: 22, endSlot: 36 }]
+const S_FULL_DAY = [{ startSlot: 0, endSlot: 44 }]
+
+export const QUICK_PRESETS = {
+  '0': S_MATIN, '9': S_MATIN, '20': S_MATIN, '12': S_MATIN, '28': S_MATIN,
+  '1': S_MIDI,  '10': S_MIDI, '21': S_MIDI,  '13': S_MIDI,
+  '15': S_APREM,'16': S_APREM,'22': S_APREM, '17': S_APREM,'27': S_APREM,
+  '2': S_SOIR,  '11': S_SOIR, '23': S_SOIR,  '14': S_SOIR, '29': S_SOIR,
+  '26': S_PILOTEBO,
+  '30': S_FULL_DAY,  // CP
+  '6':  S_FULL_DAY,  // Indisponible
+  '8':  S_FULL_DAY,  // Récup
+}
+
 // Codes d'activité qui comptent dans l'ETP :
 // Matin/Midi/Aprem/Soir (site client), TLT, TLT Agence — tout le reste est exclu
 export const ETP_CODES = new Set(['0', '1', '15', '2', '20', '21', '22', '23', '12', '13', '17', '14'])
