@@ -5,7 +5,7 @@
         {{ initials }}
       </div>
       <div class="planning-person-info">
-        <div class="planning-person-name">{{ person }}</div>
+        <router-link :to="{ name: 'person', params: { name: person } }" class="planning-person-name">{{ person }}</router-link>
       </div>
       <button
         class="btn-favorite"
@@ -213,4 +213,16 @@ function handleClick(date) {
 
 const initials = props.person.split(' ').map(n => n[0]).join('')
 </script>
+
+<style scoped>
+.planning-person-name {
+  color: inherit;
+  text-decoration: none;
+  font-weight: inherit;
+}
+.planning-person-name:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
+</style>
 

@@ -70,7 +70,8 @@
         <PlanningRow
           :person="filterPerson"
           :week-dates="weekDates"
-          :is-favorite="false"
+          :is-favorite="favorites.includes(filterPerson)"
+          @toggle-favorite="toggleFavorite"
           @open-modal="openModal"
         />
       </template>
