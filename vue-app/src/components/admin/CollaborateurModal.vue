@@ -92,6 +92,21 @@
           </div>
         </div>
 
+        <!-- Préférences Forecast -->
+        <div class="prefs-section">
+          <div class="prefs-title">
+            <span>Préférences Forecast</span>
+            <span class="prefs-hint">Forcer TLT pour certains créneaux (ex: contrainte personnelle)</span>
+          </div>
+          <div class="prefs-grid">
+            <label v-for="fam in FAMILIES" :key="fam.key" class="pref-item" :class="{ active: form.forceTlt[fam.key] }">
+              <input type="checkbox" v-model="form.forceTlt[fam.key]" class="pref-check" />
+              <span class="pref-label">{{ fam.label }}</span>
+              <span class="pref-badge">TLT</span>
+            </label>
+          </div>
+        </div>
+
         <div v-if="errorMsg" class="form-error">{{ errorMsg }}</div>
 
         <div class="modal-footer">
@@ -180,6 +195,47 @@
 .btn-close:hover { background: var(--bg-hover); color: var(--text); }
 
 @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
+
+/* Préférences Forecast */
+.prefs-section {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg-surface);
+}
+.prefs-title {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 0.75rem; font-weight: 600; color: var(--text-muted);
+}
+.prefs-hint {
+  font-size: 0.6875rem; font-weight: 400; color: var(--text-subtle);
+}
+.prefs-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+}
+.pref-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer; transition: background 0.12s, border-color 0.12s;
+  background: var(--bg-card);
+}
+.pref-item:hover { background: var(--bg-hover); }
+.pref-item.active {
+  background: rgba(215,190,158,0.15);
+  border-color: rgba(201,167,123,0.6);
+}
+.pref-check { display: none; }
+.pref-label { font-size: 0.75rem; font-weight: 600; color: var(--text); }
+.pref-badge {
+  font-size: 0.5625rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 1px 5px; border-radius: 4px;
+  background: rgba(215,190,158,0.2); color: rgba(201,167,123,1);
+  opacity: 0.4; transition: opacity 0.12s;
+}
+.pref-item.active .pref-badge { opacity: 1; }
+@media (max-width: 480px) { .prefs-grid { grid-template-columns: repeat(2, 1fr); } }
 </style>
 
 <script setup>
@@ -187,6 +243,13 @@ import { ref, computed } from 'vue'
 import { X } from 'lucide-vue-next'
 import { useAdminStore } from '@/stores/adminStore'
 import { useUserStore } from '@/stores/userStore'
+
+const FAMILIES = [
+  { key: 'matin', label: 'Matin' },
+  { key: 'midi',  label: 'Midi'  },
+  { key: 'aprem', label: 'Aprem' },
+  { key: 'soir',  label: 'Soir'  },
+]
 
 const props = defineProps({
   person: { type: Object, default: null }, // null = création
@@ -201,6 +264,13 @@ const saving   = ref(false)
 const errorMsg = ref('')
 
 // Initialise le formulaire
+const initForceTlt = () => ({
+  matin: props.person?.forecastPrefs?.matin === 'tlt',
+  midi:  props.person?.forecastPrefs?.midi  === 'tlt',
+  aprem: props.person?.forecastPrefs?.aprem === 'tlt',
+  soir:  props.person?.forecastPrefs?.soir  === 'tlt',
+})
+
 const form = ref({
   nom:         props.person?.nom         ?? '',
   prenom:      props.person?.prenom      ?? '',
@@ -213,6 +283,7 @@ const form = ref({
   onRun:       props.person?.onRun       ?? true,
   peutTLT:     props.person?.peutTLT     ?? true,
   peutBO:      props.person?.peutBO      ?? false,
+  forceTlt:    initForceTlt(),
 })
 
 const initial = {
@@ -227,6 +298,7 @@ const initial = {
   onRun:       props.person?.onRun       ?? true,
   peutTLT:     props.person?.peutTLT     ?? true,
   peutBO:      props.person?.peutBO      ?? false,
+  forceTlt:    initForceTlt(),
 }
 
 const isDirty = computed(() => {
@@ -243,7 +315,8 @@ const isDirty = computed(() => {
     f.isAdmin      !== initial.isAdmin      ||
     f.onRun        !== initial.onRun        ||
     f.peutTLT      !== initial.peutTLT      ||
-    f.peutBO       !== initial.peutBO
+    f.peutBO       !== initial.peutBO       ||
+    FAMILIES.some(fam => f.forceTlt[fam.key] !== initial.forceTlt[fam.key])
   )
 })
 
@@ -263,6 +336,12 @@ async function submit() {
       onRun:   form.value.onRun,
       peutTLT: form.value.peutTLT,
       peutBO:  form.value.peutBO,
+      forecastPrefs: {
+        matin: form.value.forceTlt.matin ? 'tlt' : null,
+        midi:  form.value.forceTlt.midi  ? 'tlt' : null,
+        aprem: form.value.forceTlt.aprem ? 'tlt' : null,
+        soir:  form.value.forceTlt.soir  ? 'tlt' : null,
+      },
     }
     if (isEdit.value) {
       await admin.updatePersonne(props.person.uid, data)

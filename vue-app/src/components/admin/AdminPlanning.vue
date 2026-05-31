@@ -366,13 +366,17 @@
                   :key="iso"
                   class="mm-th-day"
                   :class="{
-                    'mm-week-sep': monthWeekStarts.has(iso),
-                    'mm-th-sam':   monthSamedis.has(iso),
-                    'mm-th-ferie': monthFeries.has(iso),
+                    'mm-week-sep':   monthWeekStarts.has(iso),
+                    'mm-th-sam':     monthSamedis.has(iso),
+                    'mm-th-ferie':   monthFeries.has(iso),
+                    'mm-th-sorted':  monthSortDay === iso,
                   }"
+                  :title="monthSortDay === iso ? 'Cliquer pour annuler le tri' : 'Trier par cet horaire'"
+                  @click="toggleDaySort(iso)"
                 >
                   <div class="mm-dow" :class="`mm-dow-${getDow(iso).toLowerCase()}`">{{ getDow(iso) }}</div>
                   <div class="mm-dm">{{ fmtDM(iso) }}</div>
+                  <ArrowUpDown v-if="monthSortDay === iso" :size="8" class="mm-sort-icon" />
                 </th>
               </tr>
             </thead>
@@ -841,6 +845,8 @@
   background: var(--bg-surface);
   border-bottom: 2px solid var(--border);
   border-left: 1px solid var(--border);
+  cursor: pointer; user-select: none;
+  transition: background 0.12s;
   min-width: 40px;
 }
 .mm-dow {
@@ -882,6 +888,18 @@
 .month-matrix-table th:last-child {
   text-align: center; font-family: inherit; font-size: inherit;
   color: inherit; font-weight: inherit; padding: 0;
+}
+
+/* ── Colonne triée ── */
+.mm-th-day:hover { background: var(--bg-hover); }
+.mm-th-sorted {
+  background: var(--accent-light) !important;
+  border-bottom-color: var(--accent) !important;
+  color: var(--accent);
+}
+.mm-sort-icon {
+  display: block; margin: 1px auto 0;
+  color: var(--accent); opacity: 0.8;
 }
 
 /* ── Samedis ── */
@@ -2102,18 +2120,29 @@ function fmtIso(date) {
 
 // Abréviations d'activités pour les cellules de la grille mois
 const CAT_SHORT = {
-  'Matin':        'Mat',
-  'Après-midi':   'Apm',
-  'Midi':         'Mid',
-  'Soir':         'Soi',
-  'TLT':          'TLT',
-  'BO':           'BO',
-  'PiloteBO':     'Pil',
-  'Pilote':       'Pil',
-  'Congés payés': 'CP',
-  'Indisponible': 'Ind',
-  'Récupération': 'Réc',
-  'Formation':    'For',
+  'Matin':              'Mat',
+  'Après-midi':         'Apm',
+  'Midi':               'Mid',
+  'Soir':               'Soi',
+  'TLT Matin':          'TM',
+  'TLT Midi':           'TMi',
+  'TLT APREM':          'TA',
+  'TLT Soir':           'TS',
+  'TLT Agence Matin':   'TM',
+  'TLT Agence Midi':    'TMi',
+  'TLT Agence APREM':   'TA',
+  'TLT Agence Soir':    'TS',
+  'Agence Matin':       'AM',
+  'Agence Midi':        'AMi',
+  'Agence APREM':       'AA',
+  'Agence Soir':        'AS',
+  'BO':                 'BO',
+  'PiloteBO':           'Pil',
+  'Pilote':             'Pil',
+  'Congés payés':       'CP',
+  'Indisponible':       'Ind',
+  'Récupération':       'Réc',
+  'Formation':          'For',
 }
 
 const DOW_SHORT = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
@@ -2215,9 +2244,25 @@ const monthPersons = computed(() => {
     .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
 })
 
-const monthPersonRows = computed(() =>
-  monthPersons.value.map(p => ({ person: p, fullName: `${p.nom} ${p.prenom}` }))
-)
+// ── Tri par jour dans la vue mois ──
+const monthSortDay = ref(null)   // ISO du jour sélectionné pour trier, ou null (= alphabétique)
+watch(monthOffset, () => { monthSortDay.value = null })
+
+function toggleDaySort(iso) {
+  monthSortDay.value = monthSortDay.value === iso ? null : iso
+}
+
+const monthPersonRows = computed(() => {
+  const rows = monthPersons.value.map(p => ({ person: p, fullName: `${p.nom} ${p.prenom}` }))
+  if (!monthSortDay.value) return rows
+  const iso = monthSortDay.value
+  return [...rows].sort((a, b) => {
+    const rA = monthData.value[iso]?.ressources?.find(r => `${r.nom} ${r.prenom}` === a.fullName)
+    const rB = monthData.value[iso]?.ressources?.find(r => `${r.nom} ${r.prenom}` === b.fullName)
+    return horaireRank(rA?.activites) - horaireRank(rB?.activites)
+      || a.fullName.localeCompare(b.fullName, 'fr')
+  })
+})
 
 
 // Données chargées pour le mois : { iso → { state, ressources, filledCount, total } }

@@ -760,30 +760,25 @@ export const useForecastStore = defineStore('forecast', () => {
 
           // ── Rotation équitable des jours Agence (slots vides) ──
           // Limite : 2 jours vides max par personne par semaine.
-          // Les CP / Indisponibles sont déjà exclus du pool en amont → aucun risque de conflit.
           const surplus = pool.length - totalNeeded
           let assignPool = pool
 
           if (surplus > 0) {
-            // Seuls ceux qui n'ont pas encore atteint 2 jours vides cette semaine sont éligibles
             const restEligible = pool.filter(p => (weekRestDays[`${p.nom} ${p.prenom}`] || 0) < 2)
             const restCount    = Math.min(surplus, restEligible.length)
 
             const sorted = [...restEligible].sort((a, b) => {
               const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
-              // 1. Moins de jours Agence ce calcul → passe en premier (round-robin mensuel)
               const offDiff = (monthRestDays[na] || 0) - (monthRestDays[nb] || 0)
               if (offDiff !== 0) return offDiff
-              // 2. Moins d'Agence historique → passe en premier (rattrapage du ratio)
               const agenceDiff = (personStats[na]?.agenceRatio ?? 0) - (personStats[nb]?.agenceRatio ?? 0)
               if (agenceDiff !== 0) return agenceDiff
-              // 3. Alphabétique pour la stabilité
               return na.localeCompare(nb, 'fr')
             })
 
-            const resting     = sorted.slice(0, restCount)
+            const resting      = sorted.slice(0, restCount)
             const restingNames = new Set(resting.map(p => `${p.nom} ${p.prenom}`))
-            assignPool        = pool.filter(p => !restingNames.has(`${p.nom} ${p.prenom}`))
+            assignPool         = pool.filter(p => !restingNames.has(`${p.nom} ${p.prenom}`))
 
             for (const p of resting) {
               const name = `${p.nom} ${p.prenom}`
@@ -814,6 +809,9 @@ export const useForecastStore = defineStore('forecast', () => {
             .map(p => `${p.nom} ${p.prenom}`)
         )
 
+        // Index personne par nom pour accéder aux préférences
+        const personByName = Object.fromEntries(available.map(p => [`${p.nom} ${p.prenom}`, p]))
+
         // Comptage famille par jour (pour le cap TLT)
         const famCountPerDay = {}
         for (const iso of workDates) {
@@ -834,17 +832,66 @@ export const useForecastStore = defineStore('forecast', () => {
 
           for (const name of eligible) {
             if ((personTltCount[name] || 0) !== pass) continue
-            const day = nonWedDays.find(iso => {
+            const prefs = personByName[name]?.forecastPrefs
+
+            // Jours candidats valides (règles : non-mercredi, quota famille, non déjà TLT)
+            const candidates = nonWedDays.filter(iso => {
               const fam = dayFamilyMap[iso]?.[name]
               if (!fam || tltDays.has(`${name}|${iso}`)) return false
               const total = famCountPerDay[iso][fam] || 1
               return (dayTltFamCount[iso][fam] || 0) < Math.max(1, Math.floor(total / 2))
             })
-            if (!day) continue
+
+            if (!candidates.length) continue
+
+            // Priorité : jours où la famille assignée correspond à une préférence TLT
+            candidates.sort((isoA, isoB) => {
+              const famA = dayFamilyMap[isoA]?.[name]
+              const famB = dayFamilyMap[isoB]?.[name]
+              const prefA = prefs?.[famA] === 'tlt' ? 0 : 1
+              const prefB = prefs?.[famB] === 'tlt' ? 0 : 1
+              return prefA - prefB
+            })
+
+            const day = candidates[0]
             const fam = dayFamilyMap[day][name]
             tltDays.add(`${name}|${day}`)
             dayTltFamCount[day][fam] = (dayTltFamCount[day][fam] || 0) + 1
             personTltCount[name]     = (personTltCount[name] || 0) + 1
+          }
+        }
+
+        // ── 5b. Swap : collab contraint non couvert par TLT ↔ partenaire valide ──
+        // Si un collab a une contrainte "famille X → TLT seulement" mais que son quota TLT est
+        // épuisé (ou jour mercredi), on échange sa famille avec un autre collab du même jour
+        // qui peut être sur site pour X et dont le créneau est acceptable pour le contraint.
+        for (const iso of workDates) {
+          for (const p of available) {
+            const name = `${p.nom} ${p.prenom}`
+            const fam  = dayFamilyMap[iso]?.[name]
+            if (!fam) continue
+            // Problème : contraint sur cette famille ET pas TLT ce jour
+            if (p.forecastPrefs?.[fam] !== 'tlt' || tltDays.has(`${name}|${iso}`)) continue
+
+            // Chercher un partenaire sur ce jour
+            const partner = available.find(q => {
+              const qName = `${q.nom} ${q.prenom}`
+              if (qName === name) return false
+              const qFam = dayFamilyMap[iso]?.[qName]
+              if (!qFam) return false
+              // Le partenaire prend la famille contrainte de P → pas de restriction pour lui
+              if (q.forecastPrefs?.[fam] === 'tlt' && !tltDays.has(`${qName}|${iso}`)) return false
+              // P prend la famille du partenaire → P doit pouvoir être sur site pour qFam
+              if (p.forecastPrefs?.[qFam] === 'tlt' && !tltDays.has(`${name}|${iso}`)) return false
+              return true
+            })
+
+            if (!partner) continue  // aucun partenaire disponible → laisse en l'état (visible manuellement)
+
+            const partnerName = `${partner.nom} ${partner.prenom}`
+            const partnerFam  = dayFamilyMap[iso][partnerName]
+            dayFamilyMap[iso][name]        = partnerFam
+            dayFamilyMap[iso][partnerName] = fam
           }
         }
 

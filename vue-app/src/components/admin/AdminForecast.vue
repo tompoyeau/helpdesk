@@ -186,11 +186,18 @@
                       v-for="iso in visibleDates"
                       :key="iso"
                       class="th-day"
-                      :class="{ 'th-lundi': viewMode === 'month' && weekStarts.has(iso), 'th-sam': getDow(iso) === 'Sam' }"
+                      :class="{
+                        'th-lundi':  viewMode === 'month' && weekStarts.has(iso),
+                        'th-sam':    getDow(iso) === 'Sam',
+                        'th-sorted': forecastSortDay === iso,
+                      }"
+                      :title="forecastSortDay === iso ? 'Cliquer pour annuler le tri' : 'Trier par cet horaire'"
+                      @click="toggleForecastSort(iso)"
                     >
                       <div class="th-day-inner">
                         <span class="th-dow" :class="`dow-${getDow(iso).toLowerCase()}`">{{ getDow(iso) }}</span>
                         <span class="th-dm">{{ fmtDM(iso) }}</span>
+                        <ArrowUpDown v-if="forecastSortDay === iso" :size="7" class="th-sort-icon" />
                       </div>
                     </th>
                   </tr>
@@ -223,7 +230,7 @@
                 </thead>
                 <tbody>
                   <tr
-                    v-for="person in fc.preview.persons"
+                    v-for="person in sortedPersons"
                     :key="person"
                     :class="{ 'tr-fixed': fc.preview.fixedPersons?.has(person) }"
                   >
@@ -264,7 +271,7 @@
             <div class="equity-subtitle">Avant ce forecast · 12 mois glissants · Agence = jour off</div>
 
             <div class="equity-list">
-              <div v-for="person in fc.preview.persons.filter(p => !fc.preview.fixedPersons?.has(p))" :key="person" class="equity-row">
+              <div v-for="person in sortedPersons.filter(p => !fc.preview.fixedPersons?.has(p))" :key="person" class="equity-row">
                 <div class="eq-name">{{ person }}</div>
                 <div class="eq-bars">
                   <!-- Shifts matin/midi/aprem/soir -->
@@ -714,7 +721,14 @@
   background: var(--bg-surface); padding: 4px 2px; text-align: center;
   width: 42px; max-width: 42px; overflow: hidden;
   border-bottom: none !important;
+  cursor: pointer; user-select: none; transition: background 0.12s;
 }
+.th-day:hover { background: var(--bg-hover); }
+.th-sorted {
+  background: var(--accent-light) !important;
+  color: var(--accent);
+}
+.th-sort-icon { color: var(--accent); opacity: 0.8; margin-top: 1px; }
 .th-lundi { border-left: 2px solid var(--border) !important; }
 .th-day-inner { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .th-dow { font-size: 0.5rem; font-weight: 700; text-transform: uppercase; }
@@ -949,14 +963,14 @@ const testMode  = ref(false)
 </script>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useForecastStore, SHIFT_COLORS, loadAbsencesFromCollection } from '@/stores/forecastStore'
 import { useUserStore }                   from '@/stores/userStore'
 import { useDataStore }                   from '@/stores/dataStore'
 import {
   Upload, FileSpreadsheet, X, Eye, Wand2, Undo2,
   AlertTriangle, CheckCircle2, SkipForward, BarChart2,
-  ChevronLeft, ChevronRight, PieChart, Info, FlaskConical,
+  ChevronLeft, ChevronRight, PieChart, Info, FlaskConical, ArrowUpDown,
 } from 'lucide-vue-next'
 
 const fc        = useForecastStore()
@@ -1306,6 +1320,35 @@ function etpTitle(iso) {
     (s.extraBench ? `\nBanc : ${s.extraBench} pers. actives sans horaire` : '')
   )
 }
+
+/* ── Tri par jour ── */
+const forecastSortDay = ref(null)   // ISO du jour trié, ou null (= ordre preview)
+
+// Reset quand un nouveau preview est généré ou quand on change de mode vue
+watch(() => fc.preview, () => { forecastSortDay.value = null })
+watch(viewMode,          () => { forecastSortDay.value = null })
+
+const FAMILY_RANK = { matin: 0, midi: 1, aprem: 2, soir: 3, bo: 4 }
+function shiftRank(shift) {
+  if (!shift) return 99
+  const fam = SHIFT_TO_FAMILY[shift]
+  return fam !== undefined ? (FAMILY_RANK[fam] ?? 98) : 97  // 97 = absence (CP…)
+}
+
+function toggleForecastSort(iso) {
+  forecastSortDay.value = forecastSortDay.value === iso ? null : iso
+}
+
+const sortedPersons = computed(() => {
+  const persons = fc.preview?.persons ?? []
+  if (!forecastSortDay.value) return persons
+  const iso = forecastSortDay.value
+  return [...persons].sort((a, b) => {
+    const ra = shiftRank(fc.preview?.matrix[a]?.[iso])
+    const rb = shiftRank(fc.preview?.matrix[b]?.[iso])
+    return ra - rb || a.localeCompare(b, 'fr')
+  })
+})
 
 /* ── Stats historiques ── */
 function getHistStat(person, shift) {
