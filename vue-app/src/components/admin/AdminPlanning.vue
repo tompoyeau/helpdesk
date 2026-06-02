@@ -153,6 +153,13 @@
 
         <!-- ── Palette de peinture ── -->
         <div class="painter-palette">
+          <!-- Indicateur de sélection -->
+          <div v-if="weekSelectedPersons.size > 0" class="palette-select-hint">
+            <Check :size="11" />
+            {{ weekSelectedPersons.size }} sélectionné{{ weekSelectedPersons.size > 1 ? 's' : '' }} — cliquer un horaire pour l'appliquer
+            <button class="palette-deselect" @click="weekSelectedPersons = new Set()">✕</button>
+          </div>
+
           <div v-for="group in PAINT_GROUPS" :key="group.label" class="paint-group">
             <span class="paint-group-label">{{ group.label }}</span>
             <button
@@ -163,7 +170,7 @@
               :style="paintCode === code
                 ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: ACTIVITY_MAPPING[code].couleur.replace(/,\s*1\s*\)/, ', 0.15)'), color: ACTIVITY_MAPPING[code].couleur }
                 : {}"
-              @click="paintCode = paintCode === code ? null : code"
+              @click="onPaintChipClick(code)"
             >
               <span class="paint-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
               {{ ACTIVITY_MAPPING[code].categorie }}
@@ -173,15 +180,15 @@
           <button
             class="paint-chip paint-chip-erase"
             :class="{ 'paint-chip-active': paintCode === 'erase' }"
-            @click="paintCode = paintCode === 'erase' ? null : 'erase'"
+            @click="onPaintChipClick('erase')"
           >
             <Eraser :size="11" />
             Effacer
           </button>
-          <span v-if="paintCode" class="paint-hint">
+          <span v-if="weekSelectedPersons.size === 0 && paintCode" class="paint-hint">
             {{ paintCode === 'erase' ? 'Glissez pour effacer' : 'Glissez pour peindre' }}
           </span>
-          <span v-else class="paint-hint" style="opacity:0.5">Sélectionnez un outil</span>
+          <span v-else-if="weekSelectedPersons.size === 0" class="paint-hint" style="opacity:0.5">Sélectionnez un outil</span>
         </div>
 
         <!-- ── Barre d'info live (apparaît pendant le drag) ── -->
@@ -205,7 +212,17 @@
           <table class="slot-painter-table">
             <thead>
               <tr class="slot-time-row">
-                <th class="slot-name-col"></th>
+                <th class="slot-name-col">
+                  <!-- Select-all -->
+                  <input
+                    type="checkbox"
+                    class="slot-checkbox slot-checkbox-all"
+                    :checked="weekSelectedPersons.size === mergedRessources.length && mergedRessources.length > 0"
+                    :indeterminate="weekSelectedPersons.size > 0 && weekSelectedPersons.size < mergedRessources.length"
+                    title="Tout sélectionner / désélectionner"
+                    @change="toggleSelectAll"
+                  />
+                </th>
                 <th
                   v-for="s in 45"
                   :key="s - 1"
@@ -233,8 +250,15 @@
                 class="slot-row"
               >
                 <!-- Colonne nom + heures + effacer -->
-                <td class="slot-name-col">
+                <td class="slot-name-col" :class="{ 'slot-row-selected': weekSelectedPersons.has(r.idPersonne) }">
                   <div class="slot-name-inner">
+                    <!-- Checkbox de sélection -->
+                    <input
+                      type="checkbox"
+                      class="slot-checkbox"
+                      :checked="weekSelectedPersons.has(r.idPersonne)"
+                      @change="togglePersonSelect(r.idPersonne)"
+                    />
                     <div class="person-avatar" style="width:22px;height:22px;font-size:0.5rem;flex-shrink:0">
                       {{ `${r.nom?.[0]??''}${r.prenom?.[0]??''}`.toUpperCase() }}
                     </div>
@@ -1303,6 +1327,29 @@
 .slot-clear-btn:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
 .slot-name-inner:hover .slot-clear-btn { display: flex; }
 
+/* ── Checkboxes sélection multiple ── */
+.slot-checkbox {
+  width: 14px; height: 14px; flex-shrink: 0; cursor: pointer;
+  accent-color: var(--accent);
+}
+.slot-checkbox-all { margin: 0 auto; display: block; }
+.slot-row-selected { background: var(--accent-light) !important; }
+
+/* ── Indicateur de sélection dans la palette ── */
+.palette-select-hint {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 6px;
+  background: var(--accent-light); color: var(--accent);
+  font-size: 0.6875rem; font-weight: 600;
+  border: 1px solid var(--accent); white-space: nowrap;
+}
+.palette-deselect {
+  margin-left: auto; background: none; border: none;
+  cursor: pointer; color: var(--accent); font-size: 0.75rem;
+  line-height: 1; padding: 0 2px; opacity: 0.7;
+}
+.palette-deselect:hover { opacity: 1; }
+
 .slot-cell {
   width: 20px; min-width: 20px; max-width: 20px;
   height: 32px;
@@ -1523,6 +1570,83 @@ function resolveOverwrite(mode) {
   resolve(mode)
 }
 const clearingPerson    = ref(false)
+
+/* ══ Sélection multiple vue semaine ══ */
+let weekSelectedPersons = ref(new Set())
+
+function togglePersonSelect(idPersonne) {
+  const s = new Set(weekSelectedPersons.value)
+  s.has(idPersonne) ? s.delete(idPersonne) : s.add(idPersonne)
+  weekSelectedPersons.value = s
+}
+
+function toggleSelectAll() {
+  if (weekSelectedPersons.value.size === mergedRessources.value.length) {
+    weekSelectedPersons.value = new Set()
+  } else {
+    weekSelectedPersons.value = new Set(mergedRessources.value.map(r => r.idPersonne))
+  }
+}
+
+/* Chip de palette : applique aux sélectionnés OU sélectionne l'outil de peinture */
+async function onPaintChipClick(code) {
+  if (weekSelectedPersons.value.size > 0) {
+    await applyPresetToSelected(code)
+  } else {
+    // Comportement habituel : sélectionner/désélectionner l'outil de peinture
+    paintCode.value = paintCode.value === code ? null : code
+  }
+}
+
+async function applyPresetToSelected(code) {
+  const ids       = [...weekSelectedPersons.value]
+  const resources = mergedRessources.value.filter(r => ids.includes(r.idPersonne))
+
+  // Conflits : personnes ayant déjà un horaire
+  const conflicts = code === 'erase'
+    ? []
+    : resources.filter(r => (r.activites || []).some(a => a && a !== '')).map(r => `${r.nom} ${r.prenom}`)
+
+  let mode = 'overwrite'
+  if (conflicts.length > 0) {
+    mode = await askOverwriteMode(conflicts, {
+      subtitle:      `${conflicts.length} collaborateur(s) ont déjà un horaire`,
+      labelOverwrite: 'Écraser les horaires existants',
+    })
+    if (mode === 'cancel') return
+  }
+
+  for (const r of resources) {
+    const hasExisting = (r.activites || []).some(a => a && a !== '')
+    if (mode === 'empty_only' && hasExisting) continue
+
+    let newActivites
+    if (code === 'erase') {
+      newActivites = new Array(45).fill('')
+    } else {
+      const preset = QUICK_PRESETS[code]
+      if (!preset) continue
+      const curActivites = r.activites || new Array(45).fill('')
+      const curBlocks    = admin.parseBlocks(curActivites)
+      const kept         = curBlocks.filter(b => !preset.some(p => p.startSlot < b.endSlot && p.endSlot > b.startSlot))
+      const newBlocks    = [...kept, ...preset.map(p => ({ code, ...p }))].sort((a, b) => a.startSlot - b.startSlot)
+      newActivites       = admin.buildActivites(newBlocks)
+    }
+    paintSaving.value.add(r.idPersonne)
+    applyActivitesToRessource(r.idPersonne, newActivites)
+  }
+
+  await admin.saveDayPlanning(selectedDate.value, mergedRessources.value)
+
+  const filledCount = mergedRessources.value.filter(r =>
+    (r.activites || []).some(a => a && ETP_CODES.has(String(a)))
+  ).length + Object.keys(dayFixed.value).length
+  const iso = fmtIso(selectedDate.value)
+  dayStatus.value = { ...dayStatus.value, [iso]: { state: 'exists', filledCount, total: mergedRessources.value.length } }
+
+  for (const r of resources) paintSaving.value.delete(r.idPersonne)
+  weekSelectedPersons.value = new Set()
+}
 
 /* ══ Peinture de créneaux (vue semaine) ══ */
 const paintCode      = ref(null)   // code activité, 'erase', ou null
@@ -1810,10 +1934,15 @@ function getWeekDatesForDate(date) {
 
 // Semaine → Mois : on se place sur le mois de la semaine actuellement affichée
 function switchToMonth() {
-  const mon     = getMondayOf(weekOffset.value)
-  const today   = new Date()
-  const mDiff   = (mon.getFullYear() - today.getFullYear()) * 12 + (mon.getMonth() - today.getMonth())
-  monthOffset.value = mDiff
+  const today = new Date()
+  const mon   = getMondayOf(weekOffset.value)
+  // Parcourir les 6 jours (lun→sam) : si l'un est un 1er du mois, l'utiliser
+  let ref = mon
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)
+    if (d.getDate() === 1) { ref = d; break }
+  }
+  monthOffset.value = (ref.getFullYear() - today.getFullYear()) * 12 + (ref.getMonth() - today.getMonth())
   viewMode.value    = 'month'
 }
 
@@ -1940,6 +2069,7 @@ watch([viewMode, monthOffset], ([mode], [prevMode]) => {
 const selectedDate  = ref(null)
 const dayData       = ref(null)
 const loadingDay    = ref(false)
+watch(selectedDate, () => { weekSelectedPersons.value = new Set() })
 const editRessource = ref(null)
 const saveSuccess   = ref(false) // affiché après chaque sauvegarde auto
 const clearTarget   = ref(null)
@@ -1961,11 +2091,13 @@ async function selectDay(date) {
 const mergedRessources = computed(() => {
   if (!dayData.value || !userStore.users.length) return []
 
-  const existing    = dayData.value.ressources || []
-  const existingIds = new Set(existing.map(r => r.idPersonne))
-
   const activePeople = userStore.users
     .filter(p => admin.isActiveOn(p, selectedDate.value))
+  const activeIds = new Set(activePeople.map(p => p.id || p.uid))
+
+  // Garder uniquement les ressources Firestore dont la personne est encore active
+  const existing    = (dayData.value.ressources || []).filter(r => activeIds.has(r.idPersonne))
+  const existingIds = new Set(existing.map(r => r.idPersonne))
 
   const fromPersonnes = activePeople
     .filter(p => !existingIds.has(p.id || p.uid))

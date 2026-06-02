@@ -61,6 +61,31 @@ for (let i = 0; i <= 44; i++) {
 }
 
 /* ============================================================
+   PERSONNES FIXES (MACA, ALRE — Équipe Covéa)
+   Leurs données viennent du champ `fixed` des documents jour,
+   pas de `ressources`. On génère des entries compatibles avec analyzeActivities.
+   ============================================================ */
+
+const FIXED_FAM_ENTRIES = {
+  matin: [
+    { categorie: 'Matin', couleur: ACTIVITY_MAPPING['0'].couleur, horaire: '08:00-12:00', slots: 16 },
+    { categorie: 'Matin', couleur: ACTIVITY_MAPPING['0'].couleur, horaire: '13:00-16:30', slots: 14 },
+  ],
+  midi: [
+    { categorie: 'Midi',  couleur: ACTIVITY_MAPPING['1'].couleur,  horaire: '08:30-12:30', slots: 16 },
+    { categorie: 'Midi',  couleur: ACTIVITY_MAPPING['1'].couleur,  horaire: '13:30-17:00', slots: 14 },
+  ],
+  aprem: [
+    { categorie: 'Aprem', couleur: ACTIVITY_MAPPING['15'].couleur, horaire: '09:00-12:30', slots: 14 },
+    { categorie: 'Aprem', couleur: ACTIVITY_MAPPING['15'].couleur, horaire: '13:30-17:30', slots: 16 },
+  ],
+  soir: [
+    { categorie: 'Soir',  couleur: ACTIVITY_MAPPING['2'].couleur,  horaire: '09:15-13:15', slots: 16 },
+    { categorie: 'Soir',  couleur: ACTIVITY_MAPPING['2'].couleur,  horaire: '14:30-18:00', slots: 14 },
+  ],
+}
+
+/* ============================================================
    HELPERS
    ============================================================ */
 
@@ -134,11 +159,12 @@ export function analyzeActivities(activites) {
 
 export const useDataStore = defineStore('data', () => {
   // shallowRef : Vue ne proxy pas récursivement les données volumineuses
-  const _planning       = shallowRef({})
-  const _persons        = ref([])
-  const _personnesData  = shallowRef({})
-  const _nameToPersonId = shallowRef({})
-  const _nameToUid      = shallowRef({}) // "NOM Prenom" → Firebase Auth UID
+  const _planning         = shallowRef({})
+  const _persons          = ref([])
+  const _personnesData    = shallowRef({})
+  const _nameToPersonId   = shallowRef({})
+  const _nameToUid        = shallowRef({})
+  const _fixedPersonNames = ref(new Set())   // noms des personnes fixes (MACA, ALRE…) // "NOM Prenom" → Firebase Auth UID
 
   const categories = ref([])
   const colors     = ref({})
@@ -208,29 +234,45 @@ export const useDataStore = defineStore('data', () => {
     const allColors         = {}
     const newNameToPersonId = {}
 
+    const newFixedNames = new Set()
+
     snapshot.forEach(docSnap => {
       const day  = docSnap.data()
       const date = parseDateFromId(docSnap.id)
-      if (!date || !Array.isArray(day.ressources)) return
+      if (!date) return
 
-      day.ressources.forEach(person => {
-        const fullName = `${person.nom} ${person.prenom}`
-        if (!newPlanning[fullName]) newPlanning[fullName] = {}
-        if (person.idPersonne) newNameToPersonId[fullName] = person.idPersonne
+      // Ressources régulières
+      if (Array.isArray(day.ressources)) {
+        day.ressources.forEach(person => {
+          const fullName = `${person.nom} ${person.prenom}`
+          if (!newPlanning[fullName]) newPlanning[fullName] = {}
+          if (person.idPersonne) newNameToPersonId[fullName] = person.idPersonne
 
-        const entries = analyzeActivities(person.activites || [])
-        if (entries.length > 0) {
-          newPlanning[fullName][date] = entries
-          entries.forEach(e => {
-            allCategories.add(e.categorie)
-            if (!allColors[e.categorie]) allColors[e.categorie] = e.couleur
-          })
-        }
-      })
+          const entries = analyzeActivities(person.activites || [])
+          if (entries.length > 0) {
+            newPlanning[fullName][date] = entries
+            entries.forEach(e => {
+              allCategories.add(e.categorie)
+              if (!allColors[e.categorie]) allColors[e.categorie] = e.couleur
+            })
+          }
+        })
+      }
+
+      // Personnes fixes (MACA, ALRE — Équipe Covéa)
+      const fixed = day.fixed || {}
+      for (const [name, fam] of Object.entries(fixed)) {
+        const entries = FIXED_FAM_ENTRIES[fam]
+        if (!entries) continue
+        newFixedNames.add(name)
+        if (!newPlanning[name]) newPlanning[name] = {}
+        newPlanning[name][date] = entries
+      }
     })
 
-    _nameToPersonId.value = newNameToPersonId
-    _planning.value       = newPlanning
+    _fixedPersonNames.value = newFixedNames
+    _nameToPersonId.value   = newNameToPersonId
+    _planning.value         = newPlanning
     _persons.value        = Object.keys(newPlanning).sort()
     categories.value      = [...allCategories].sort()
     colors.value          = allColors
@@ -367,10 +409,11 @@ export const useDataStore = defineStore('data', () => {
   }
 
   return {
-    planning:     _planning,
-    persons:      _persons,
-    personnesData: _personnesData,
-    nameToUid:    _nameToUid,
+    planning:         _planning,
+    persons:          _persons,
+    personnesData:    _personnesData,
+    nameToUid:        _nameToUid,
+    fixedPersonNames: _fixedPersonNames,
     categories,
     colors,
     loading,

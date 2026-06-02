@@ -927,7 +927,6 @@ a { text-decoration: none; color: inherit; }
 
 .kpi-card {
   background: var(--bg);
-  border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
   display: flex;
@@ -971,7 +970,7 @@ a { text-decoration: none; color: inherit; }
    ============================================================ */
 
 .hcard-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding-top: 6px; }
-.hcard { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-md); padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 5px; transition: box-shadow 0.15s; }
+.hcard { background: var(--bg); border-radius: var(--radius-md); padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 5px; transition: box-shadow 0.15s; }
 .hcard:hover { box-shadow: var(--shadow-sm); }
 .hcard-header { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
 .hcard-icon { font-size: 13px; }
@@ -1048,7 +1047,7 @@ a { text-decoration: none; color: inherit; }
 .person-period { font-size: 11px; color: var(--text-muted); }
 .person-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
 @media (max-width: 640px) { .person-stats-grid { grid-template-columns: repeat(2, 1fr); } }
-.person-stat-card { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: box-shadow 0.15s, transform 0.12s; }
+.person-stat-card { background: var(--bg); border-radius: var(--radius-md); padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: box-shadow 0.15s, transform 0.12s; }
 .person-stat-card:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .person-stat-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .person-stat-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -1270,7 +1269,6 @@ a { text-decoration: none; color: inherit; }
   color: var(--text-header);
   padding: 8px 12px;
   border-radius: 12px;
-  border: 1px solid var(--border);
 }
 
 .planning-period {
@@ -1380,7 +1378,6 @@ a { text-decoration: none; color: inherit; }
 
 .planning-day-col {
   background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 16px;
   padding: 10px 12px;
   text-align: center;
@@ -1430,12 +1427,11 @@ a { text-decoration: none; color: inherit; }
 }
 
 .planning-person-info { min-width: 0; flex: 1; }
-.planning-person-name { font-size: 0.8125rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.planning-person-name { display: block; font-size: 0.8125rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Day cells */
 .planning-cell {
   background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 16px;
   padding: 10px;
   display: flex;
@@ -1526,7 +1522,6 @@ a { text-decoration: none; color: inherit; }
     display: flex;
     flex-direction: column;
     background: var(--bg-card);
-    border: 1px solid var(--border);
     border-radius: 16px;
     padding: 10px;
     gap: 8px;
@@ -1662,7 +1657,6 @@ a { text-decoration: none; color: inherit; }
   padding: 12px 14px;
   background: var(--bg-surface);
   border-radius: 10px;
-  border: 1px solid var(--border);
 }
 
 .modal-entry-bar    { width: 4px; height: 36px; border-radius: 2px; flex-shrink: 0; }
