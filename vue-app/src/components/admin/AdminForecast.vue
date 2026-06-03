@@ -162,11 +162,8 @@
           </button>
         </div>
 
-        <!-- Vue principale : matrice + stats historiques côte à côte -->
-        <div class="split-view">
-
-          <!-- Matrice Collaborateur × Jour -->
-          <div class="matrix-wrap">
+        <!-- Matrice Collaborateur × Jour -->
+        <div class="matrix-wrap">
             <div class="legend">
               <span v-for="(c, name) in SHIFT_COLORS" :key="name" v-show="name !== ''"
                 class="legend-item" :style="{ background: c.bg, color: c.text }" :title="name">
@@ -174,10 +171,10 @@
               </span>
             </div>
             <div class="matrix-scroll">
-              <table class="matrix-table" :style="viewMode === 'week' ? { width: '100%' } : { width: matrixTableWidth + 'px' }">
+              <table class="matrix-table" style="width:100%">
                 <colgroup>
                   <col style="width:160px;min-width:160px;max-width:160px">
-                  <col v-for="iso in visibleDates" :key="iso" :style="viewMode === 'week' ? { minWidth: '42px' } : { width: '42px', minWidth: '42px', maxWidth: '42px' }">
+                  <col v-for="iso in visibleDates" :key="iso" style="min-width:42px">
                 </colgroup>
                 <thead>
                   <tr>
@@ -261,72 +258,6 @@
               </table>
             </div>
           </div>
-
-          <!-- Panneau d'équité historique -->
-          <div class="equity-panel">
-            <div class="equity-title">
-              <BarChart2 :size="13" />
-              Répartition historique
-            </div>
-            <div class="equity-subtitle">Avant ce forecast · 12 mois glissants · Agence = jour off</div>
-
-            <div class="equity-list">
-              <div v-for="person in sortedPersons.filter(p => !fc.preview.fixedPersons?.has(p))" :key="person" class="equity-row">
-                <div class="eq-name">{{ person }}</div>
-                <div class="eq-bars">
-                  <!-- Shifts matin/midi/aprem/soir -->
-                  <div
-                    v-for="shift in ['matin','midi','aprem','soir']"
-                    :key="shift"
-                    class="eq-bar-wrap"
-                    :title="`${shift}: ${getHistStat(person, shift)} semaines (${getHistPct(person, shift)}%)`"
-                  >
-                    <div
-                      class="eq-bar"
-                      :style="{
-                        width: getHistPct(person, shift) + '%',
-                        background: SHIFT_COLORS[SITE_NAME[shift]]?.text || 'var(--accent)'
-                      }"
-                    ></div>
-                    <span class="eq-bar-val">{{ getHistPct(person, shift) }}%</span>
-                  </div>
-
-                  <!-- Ratio journées vertes (Agence) -->
-                  <div
-                    class="eq-bar-wrap eq-bar-agence-wrap"
-                    :title="`Journées Agence : ${getAgenceDays(person)} / ${getTotalActiveDays(person)} jours actifs (${getAgencePct(person)}%)`"
-                  >
-                    <div
-                      class="eq-bar eq-bar-agence"
-                      :style="{ width: Math.min(getAgencePct(person), 100) + '%' }"
-                    ></div>
-                    <span class="eq-bar-val eq-bar-agence-val">
-                      {{ getAgencePct(person) }}%
-                      <span class="eq-agence-detail">({{ getAgenceDays(person) }}j / {{ getTotalActiveDays(person) }}j)</span>
-                    </span>
-                  </div>
-                </div>
-                <div class="eq-total">{{ getHistTotal(person) }}s</div>
-              </div>
-            </div>
-
-            <!-- Légende shifts pour le panneau équité -->
-            <div class="equity-legend">
-              <span v-for="shift in ['matin','midi','aprem','soir']" :key="shift"
-                class="eq-legend-item"
-                :style="{ color: SHIFT_COLORS[SITE_NAME[shift]]?.text }"
-              >
-                <span class="eq-dot" :style="{ background: SHIFT_COLORS[SITE_NAME[shift]]?.text }"></span>
-                {{ SITE_NAME[shift] }}
-              </span>
-              <span class="eq-legend-item eq-legend-agence">
-                <span class="eq-dot" style="background:#65a30d"></span>
-                Agence
-              </span>
-            </div>
-          </div>
-
-        </div>
       </template>
     </template>
 
@@ -701,8 +632,8 @@
 .legend-item { padding: 2px 7px; border-radius: 4px; font-size: 0.625rem; font-weight: 700; }
 
 /* ── Matrice ── */
-.matrix-wrap { min-width: 0; }
-.matrix-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); max-height: 65vh; }
+.matrix-wrap { min-width: 0; width: 100%; }
+.matrix-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); max-height: 65vh; width: 100%; }
 .matrix-table { border-collapse: collapse; font-size: 0.6875rem; table-layout: fixed; }
 .matrix-table th, .matrix-table td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
 .matrix-table tr:last-child td { border-bottom: none; }

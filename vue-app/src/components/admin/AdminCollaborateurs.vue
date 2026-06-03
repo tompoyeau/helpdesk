@@ -61,6 +61,7 @@
                     </span>
                     <span v-if="u.peutTLT !== false" class="badge-cap badge-tlt">TLT</span>
                     <span v-if="u.peutBO" class="badge-cap badge-bo">BO</span>
+                    <span v-if="u.isAdmin" class="badge-cap badge-admin">Admin</span>
                   </div>
                 </div>
               </div>
@@ -169,8 +170,9 @@
   font-size: 0.5625rem; font-weight: 700; letter-spacing: 0.04em;
   padding: 1px 5px; border-radius: 4px; text-transform: uppercase;
 }
-.badge-tlt { background: rgba(215,190,158,0.2);  color: rgba(201,167,123,1); }
-.badge-bo  { background: rgba(253,224,71,0.2);   color: rgba(180,155,20,1);  }
+.badge-tlt   { background: rgba(215,190,158,0.2);  color: rgba(201,167,123,1); }
+.badge-bo    { background: rgba(253,224,71,0.2);   color: rgba(180,155,20,1);  }
+.badge-admin { background: rgba(239,68,68,0.12);   color: #ef4444;             }
 
 /* Badge niveau */
 .badge-niveau {

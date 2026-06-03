@@ -4,6 +4,11 @@
     :class="{ open: ui.leftDrawerOpen }"
     id="sidebarLeft"
   >
+    <!-- Bouton collapse (desktop uniquement) -->
+    <button class="sb-toggle desktop-only" @click="ui.toggleLeftSidebar()" :title="ui.leftCollapsed ? 'Afficher collaborateurs' : 'Masquer'">
+      <ChevronLeft :size="14" :style="ui.leftCollapsed ? 'transform:rotate(180deg)' : ''" />
+    </button>
+
     <!-- Handle pill (mobile bottom sheet uniquement) -->
     <div class="drawer-handle-wrap mobile-only" aria-hidden="true">
       <div class="drawer-handle"></div>
@@ -98,7 +103,7 @@ import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useDataStore } from '@/stores/dataStore'
-import { X, Search } from 'lucide-vue-next'
+import { X, Search, ChevronLeft } from 'lucide-vue-next'
 
 const ui     = useUiStore()
 const data   = useDataStore()

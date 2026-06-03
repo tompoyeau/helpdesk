@@ -303,6 +303,7 @@ a { text-decoration: none; color: inherit; }
   top: 52px;
   height: calc(100vh - 52px);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-section-label {
@@ -695,9 +696,29 @@ a { text-decoration: none; color: inherit; }
   display: grid;
   grid-template-columns: 240px 1fr 220px;
   align-items: start;
+  transition: grid-template-columns 0.25s ease;
 }
+.layout-body.left-collapsed  { grid-template-columns: 24px 1fr 220px; }
+.layout-body.right-collapsed { grid-template-columns: 240px 1fr 24px; }
+.layout-body.left-collapsed.right-collapsed { grid-template-columns: 24px 1fr 24px; }
 
 .layout-main { min-width: 0; }
+
+/* ── Toggle sidebar button ── */
+.sb-toggle {
+  width: 100%; height: 36px; flex-shrink: 0;
+  background: transparent; border: none; border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.sb-toggle:hover { background: var(--bg-hover); color: var(--text); }
+.sb-toggle svg   { transition: transform 0.25s ease; flex-shrink: 0; }
+
+/* Masquer le contenu quand réduit, garder le bouton */
+.layout-body.left-collapsed  .sidebar-left  > *:not(.sb-toggle) { display: none; }
+.layout-body.right-collapsed .sidebar-right > *:not(.sb-toggle) { display: none; }
 
 /* Table scroll wrapper */
 .table-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }

@@ -34,7 +34,10 @@
   <!-- Application principale -->
   <div v-else class="flex flex-col" style="min-height:100vh">
     <AppHeader />
-    <div class="layout-body">
+    <div
+      class="layout-body"
+      :class="{ 'left-collapsed': ui.leftCollapsed, 'right-collapsed': ui.rightCollapsed }"
+    >
       <SidebarLeft />
       <main class="layout-main flex flex-col" style="background:var(--bg-surface)">
         <RouterView />

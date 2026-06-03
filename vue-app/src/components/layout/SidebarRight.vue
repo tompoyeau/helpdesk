@@ -4,6 +4,11 @@
     :class="{ open: ui.rightDrawerOpen }"
     id="sidebarRight"
   >
+    <!-- Bouton collapse (desktop uniquement) -->
+    <button class="sb-toggle desktop-only" @click="ui.toggleRightSidebar()" :title="ui.rightCollapsed ? 'Afficher catégories' : 'Masquer'">
+      <ChevronRight :size="14" :style="ui.rightCollapsed ? 'transform:rotate(180deg)' : ''" />
+    </button>
+
     <div class="drawer-header desktop-only-none">
       <span class="drawer-title">Catégories</span>
       <button class="btn-icon btn-icon-sm" @click="ui.closeAllDrawers()">
@@ -89,7 +94,7 @@ import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useDataStore } from '@/stores/dataStore'
-import { X } from 'lucide-vue-next'
+import { X, ChevronRight } from 'lucide-vue-next'
 
 const ui     = useUiStore()
 const data   = useDataStore()

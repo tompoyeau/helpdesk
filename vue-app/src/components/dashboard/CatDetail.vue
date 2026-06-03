@@ -70,13 +70,13 @@ const router = useRouter()
 
 /* ── Catégories consolidées ── */
 const CONSOLIDATED = {
-  CONS_MATIN:  { label: 'Matin',           getDays: s => s.detail.matin.site + s.detail.matin.tlt,  getSub: s => ({ 'Client': s.detail.matin.site, 'TLT': s.detail.matin.tlt }) },
-  CONS_MIDI:   { label: 'Midi',            getDays: s => s.detail.midi.site  + s.detail.midi.tlt,   getSub: s => ({ 'Client': s.detail.midi.site,  'TLT': s.detail.midi.tlt  }) },
-  CONS_APREM:  { label: 'Aprem',           getDays: s => s.detail.aprem.site + s.detail.aprem.tlt,  getSub: s => ({ 'Client': s.detail.aprem.site, 'TLT': s.detail.aprem.tlt }) },
-  CONS_SOIR:   { label: 'Soir',            getDays: s => s.detail.soir.site  + s.detail.soir.tlt,   getSub: s => ({ 'Client': s.detail.soir.site,  'TLT': s.detail.soir.tlt  }) },
-  CONS_AGENCE: { label: 'Journées vertes', getDays: s => s.agenceDays,                              getSub: null },
+  CONS_MATIN:  { label: 'Matin',           getDays: s => s.detail.matin.site + s.detail.matin.tlt + s.detail.matin.tlt_agence,  getSub: s => ({ 'Client': s.detail.matin.site, 'TLT': s.detail.matin.tlt, 'TLT Agence': s.detail.matin.tlt_agence }) },
+  CONS_MIDI:   { label: 'Midi',            getDays: s => s.detail.midi.site  + s.detail.midi.tlt  + s.detail.midi.tlt_agence,   getSub: s => ({ 'Client': s.detail.midi.site,  'TLT': s.detail.midi.tlt,  'TLT Agence': s.detail.midi.tlt_agence  }) },
+  CONS_APREM:  { label: 'Aprem',           getDays: s => s.detail.aprem.site + s.detail.aprem.tlt + s.detail.aprem.tlt_agence,  getSub: s => ({ 'Client': s.detail.aprem.site, 'TLT': s.detail.aprem.tlt, 'TLT Agence': s.detail.aprem.tlt_agence }) },
+  CONS_SOIR:   { label: 'Soir',            getDays: s => s.detail.soir.site  + s.detail.soir.tlt  + s.detail.soir.tlt_agence,   getSub: s => ({ 'Client': s.detail.soir.site,  'TLT': s.detail.soir.tlt,  'TLT Agence': s.detail.soir.tlt_agence  }) },
+  CONS_AGENCE: { label: 'Journées vertes', getDays: s => s.agenceDays,                                                          getSub: null },
 }
-const SUBTYPE_COLORS = { 'Client': '#6366F1', 'TLT': '#22D3EE' }
+const SUBTYPE_COLORS = { 'Client': '#6366F1', 'TLT': '#22D3EE', 'TLT Agence': '#f59e0b' }
 
 const isConsolidated = computed(() => props.catName in CONSOLIDATED)
 const isSamedi       = computed(() => props.catName === 'samedi')

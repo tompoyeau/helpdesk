@@ -24,6 +24,19 @@ export const useUiStore = defineStore('ui', () => {
   const rightDrawerOpen = ref(false)
   const dateSheetOpen   = ref(false)
 
+  // Sidebars desktop (collapsed = masquée)
+  const leftCollapsed  = ref(localStorage.getItem('sb-left-collapsed')  === '1')
+  const rightCollapsed = ref(localStorage.getItem('sb-right-collapsed') === '1')
+
+  function toggleLeftSidebar() {
+    leftCollapsed.value = !leftCollapsed.value
+    localStorage.setItem('sb-left-collapsed', leftCollapsed.value ? '1' : '0')
+  }
+  function toggleRightSidebar() {
+    rightCollapsed.value = !rightCollapsed.value
+    localStorage.setItem('sb-right-collapsed', rightCollapsed.value ? '1' : '0')
+  }
+
   function toggleDark() {
     darkMode.value = !darkMode.value
     document.documentElement.classList.toggle('dark', darkMode.value)
@@ -55,6 +68,8 @@ export const useUiStore = defineStore('ui', () => {
   return {
     darkMode, currentView, selectedPerson, selectedCat, personSearch,
     leftDrawerOpen, rightDrawerOpen, dateSheetOpen,
+    leftCollapsed, rightCollapsed,
     toggleDark, initDark, navigate, closeAllDrawers,
+    toggleLeftSidebar, toggleRightSidebar,
   }
 })

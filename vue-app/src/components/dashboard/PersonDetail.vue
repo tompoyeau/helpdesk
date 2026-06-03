@@ -363,20 +363,22 @@ const HREP = [
   { label: 'Aprem', h: 'aprem' },
   { label: 'Soir',  h: 'soir'  },
 ]
-const HREP_COLORS = { 'Client': '#6366F1', 'TLT': '#22D3EE', 'Agence': '#34D399' }
+const HREP_COLORS = { 'Client': '#6366F1', 'TLT': '#22D3EE', 'TLT Agence': '#f59e0b', 'Agence': '#34D399' }
 
 const repartitionRows = computed(() => {
   const s = psStats.value
   if (!s) return []
   const rows = []
   for (const { label, h } of HREP) {
-    const site  = s.detail[h].site
-    const tlt   = s.detail[h].tlt   // inclut TLT Domicile + TLT Agence (mode: 'tlt')
-    const total = Math.round((site + tlt) * 10) / 10
+    const site       = s.detail[h].site
+    const tlt        = s.detail[h].tlt
+    const tlt_agence = s.detail[h].tlt_agence
+    const total      = Math.round((site + tlt + tlt_agence) * 10) / 10
     if (total === 0) continue
     const segs = []
-    if (site > 0) segs.push({ type: 'Client', value: site, pct: Math.round(site / total * 100), color: HREP_COLORS['Client'] })
-    if (tlt  > 0) segs.push({ type: 'TLT',    value: tlt,  pct: Math.round(tlt  / total * 100), color: HREP_COLORS['TLT']    })
+    if (site       > 0) segs.push({ type: 'Client',     value: site,       pct: Math.round(site       / total * 100), color: HREP_COLORS['Client']     })
+    if (tlt        > 0) segs.push({ type: 'TLT',        value: tlt,        pct: Math.round(tlt        / total * 100), color: HREP_COLORS['TLT']        })
+    if (tlt_agence > 0) segs.push({ type: 'TLT Agence', value: tlt_agence, pct: Math.round(tlt_agence / total * 100), color: HREP_COLORS['TLT Agence'] })
     rows.push({ label, total, segs })
   }
   if (s.agenceDays > 0) {

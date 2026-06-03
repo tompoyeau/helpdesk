@@ -357,8 +357,8 @@ const activePeople = computed(() => data.activePersons())
 
 /* ── Changement de vue avec synchronisation de date ── */
 function goToday() {
-  if (viewMode.value === 'week') weekOffset.value = 0
-  else monthOffset.value = 0
+  if (viewMode.value === 'month') monthOffset.value = 0
+  else weekOffset.value = 0
 }
 
 function switchToMonth() {

@@ -45,10 +45,10 @@ export const CAT_MAP = {
   'TLT Midi':         { horaire: 'midi',  mode: 'tlt',       capped: false },
   'TLT APREM':        { horaire: 'aprem', mode: 'tlt',       capped: false },
   'TLT Soir':         { horaire: 'soir',  mode: 'tlt',       capped: false },
-  'TLT Agence Matin': { horaire: 'matin', mode: 'tlt',       capped: false },
-  'TLT Agence Midi':  { horaire: 'midi',  mode: 'tlt',       capped: false },
-  'TLT Agence APREM': { horaire: 'aprem', mode: 'tlt',       capped: false },
-  'TLT Agence Soir':  { horaire: 'soir',  mode: 'tlt',       capped: false },
+  'TLT Agence Matin': { horaire: 'matin', mode: 'tlt_agence', capped: false },
+  'TLT Agence Midi':  { horaire: 'midi',  mode: 'tlt_agence', capped: false },
+  'TLT Agence APREM': { horaire: 'aprem', mode: 'tlt_agence', capped: false },
+  'TLT Agence Soir':  { horaire: 'soir',  mode: 'tlt_agence', capped: false },
   // ── Journées vertes / Agence (site non-RUN) ───────────────
   'Agence Matin':     { horaire: 'matin', mode: 'agence',    capped: false },
   'Agence Midi':      { horaire: 'midi',  mode: 'agence',    capped: false },
@@ -122,16 +122,16 @@ export function isFerie(isoDate) {
    ============================================================ */
 
 const HORAIRES    = ['matin', 'midi', 'aprem', 'soir']
-const MODES_WORK  = ['site', 'tlt', 'agence', 'w11']
+const MODES_WORK  = ['site', 'tlt', 'tlt_agence', 'agence', 'w11']
 const MODES_ABS   = ['cp', 'indispo', 'recup']
 
 /** Crée un objet horaire × mode vide (slots = 0) */
 function emptyHm() {
   return {
-    matin: { site: 0, tlt: 0, agence: 0, w11: 0 },
-    midi:  { site: 0, tlt: 0, agence: 0, w11: 0 },
-    aprem: { site: 0, tlt: 0, agence: 0, w11: 0 },
-    soir:  { site: 0, tlt: 0, agence: 0, w11: 0 },
+    matin: { site: 0, tlt: 0, tlt_agence: 0, agence: 0, w11: 0 },
+    midi:  { site: 0, tlt: 0, tlt_agence: 0, agence: 0, w11: 0 },
+    aprem: { site: 0, tlt: 0, tlt_agence: 0, agence: 0, w11: 0 },
+    soir:  { site: 0, tlt: 0, tlt_agence: 0, agence: 0, w11: 0 },
   }
 }
 
@@ -153,14 +153,14 @@ const CAPPED_CATS_SET = new Set(
  */
 function statsFromRaw(hm, capped, n = 1) {
   // ── Slots travaillés par horaire ──────────────────────────────
-  const matinS  = hm.matin.site + hm.matin.tlt + hm.matin.agence + hm.matin.w11
-  const midiS   = hm.midi.site  + hm.midi.tlt  + hm.midi.agence
-  const apremS  = hm.aprem.site + hm.aprem.tlt + hm.aprem.agence
-  const soirS   = hm.soir.site  + hm.soir.tlt  + hm.soir.agence  + hm.soir.w11
+  const matinS  = hm.matin.site + hm.matin.tlt + hm.matin.tlt_agence + hm.matin.agence + hm.matin.w11
+  const midiS   = hm.midi.site  + hm.midi.tlt  + hm.midi.tlt_agence  + hm.midi.agence
+  const apremS  = hm.aprem.site + hm.aprem.tlt + hm.aprem.tlt_agence + hm.aprem.agence
+  const soirS   = hm.soir.site  + hm.soir.tlt  + hm.soir.tlt_agence  + hm.soir.agence  + hm.soir.w11
   const workS   = matinS + midiS + apremS + soirS   // total travaillé (slots)
 
   // ── Slots travaillés par mode ─────────────────────────────────
-  const tltS    = HORAIRES.reduce((s, h) => s + hm[h].tlt,    0)
+  const tltS    = HORAIRES.reduce((s, h) => s + hm[h].tlt + hm[h].tlt_agence, 0)
   const agenceS = HORAIRES.reduce((s, h) => s + hm[h].agence, 0)
   const siteS   = workS - tltS - agenceS
 
@@ -221,10 +221,10 @@ function statsFromRaw(hm, capped, n = 1) {
     // ── Détail horaire × mode (PersonDetail, CatDetail) ──────────
     // Valeurs en jours
     detail: {
-      matin: { site: r1(hm.matin.site/spd), tlt: r1(hm.matin.tlt/spd), agence: r1(hm.matin.agence/spd), w11: r1(hm.matin.w11/spd) },
-      midi:  { site: r1(hm.midi.site/spd),  tlt: r1(hm.midi.tlt/spd),  agence: r1(hm.midi.agence/spd)  },
-      aprem: { site: r1(hm.aprem.site/spd), tlt: r1(hm.aprem.tlt/spd), agence: r1(hm.aprem.agence/spd) },
-      soir:  { site: r1(hm.soir.site/spd),  tlt: r1(hm.soir.tlt/spd),  agence: r1(hm.soir.agence/spd),  w11: r1(hm.soir.w11/spd)  },
+      matin: { site: r1(hm.matin.site/spd), tlt: r1(hm.matin.tlt/spd), tlt_agence: r1(hm.matin.tlt_agence/spd), agence: r1(hm.matin.agence/spd), w11: r1(hm.matin.w11/spd) },
+      midi:  { site: r1(hm.midi.site/spd),  tlt: r1(hm.midi.tlt/spd),  tlt_agence: r1(hm.midi.tlt_agence/spd),  agence: r1(hm.midi.agence/spd)  },
+      aprem: { site: r1(hm.aprem.site/spd), tlt: r1(hm.aprem.tlt/spd), tlt_agence: r1(hm.aprem.tlt_agence/spd), agence: r1(hm.aprem.agence/spd) },
+      soir:  { site: r1(hm.soir.site/spd),  tlt: r1(hm.soir.tlt/spd),  tlt_agence: r1(hm.soir.tlt_agence/spd),  agence: r1(hm.soir.agence/spd),  w11: r1(hm.soir.w11/spd)  },
     },
 
     // ── Moyennes par personne (pour computeTeamStats) ───────────
@@ -517,6 +517,19 @@ export const CATALOG = [
   { key: 'tlt-soir',      group: 'TLT',        label: 'TLT Soir',          color: 'rgba(163,121,64,1)',
     getPct: r => _jPct(r.detail.soir.tlt,   r),  getDays: r => r.detail.soir.tlt       },
 
+  // ── TLT Agence (tous + par horaire) ─────────────────────────
+  { key: 'tlt-agence',       group: 'TLT Agence', label: 'TLT Agence (tous)',  color: 'rgba(245,158,11,1)',
+    getPct: r => _jPct(HORAIRES.reduce((s, h) => s + r.detail[h].tlt_agence, 0), r),
+    getDays: r => r1(HORAIRES.reduce((s, h) => s + r.detail[h].tlt_agence, 0)) },
+  { key: 'tlt-agence-matin', group: 'TLT Agence', label: 'TLT Agence Matin',  color: 'rgba(251,191,36,1)',
+    getPct: r => _jPct(r.detail.matin.tlt_agence, r), getDays: r => r.detail.matin.tlt_agence },
+  { key: 'tlt-agence-midi',  group: 'TLT Agence', label: 'TLT Agence Midi',   color: 'rgba(245,158,11,0.85)',
+    getPct: r => _jPct(r.detail.midi.tlt_agence,  r), getDays: r => r.detail.midi.tlt_agence  },
+  { key: 'tlt-agence-aprem', group: 'TLT Agence', label: 'TLT Agence Aprem',  color: 'rgba(245,158,11,0.75)',
+    getPct: r => _jPct(r.detail.aprem.tlt_agence, r), getDays: r => r.detail.aprem.tlt_agence },
+  { key: 'tlt-agence-soir',  group: 'TLT Agence', label: 'TLT Agence Soir',   color: 'rgba(245,158,11,0.65)',
+    getPct: r => _jPct(r.detail.soir.tlt_agence,  r), getDays: r => r.detail.soir.tlt_agence  },
+
   // ── Agence / Journées vertes (tous + par horaire) ─────────
   { key: 'agence',        group: 'Agence',     label: 'Jours verts (tous)', color: '#65a30d',
     getPct: r => r.tauxAgence,                    getDays: r => r.agenceDays            },
@@ -539,7 +552,7 @@ export const CATALOG = [
 ]
 
 /** Ordre des groupes dans le picker — Consolidé en premier */
-export const CATALOG_GROUPS = ['Consolidé', 'Site', 'TLT', 'Agence', 'Absences']
+export const CATALOG_GROUPS = ['Consolidé', 'Site', 'TLT', 'TLT Agence', 'Agence', 'Absences']
 
 /** Colonnes affichées par défaut (horaires consolidés + TLT + Agence) */
 export const CATALOG_DEFAULTS = ['h-matin', 'h-midi', 'h-aprem', 'h-soir', 'tlt', 'agence']
