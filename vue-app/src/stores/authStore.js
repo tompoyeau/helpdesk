@@ -8,9 +8,10 @@ import {
 } from 'firebase/auth'
 
 export const useAuthStore = defineStore('auth', () => {
-  const user    = ref(null)
-  const loading = ref(true)
-  const error   = ref('')
+  const user           = ref(null)
+  const loading        = ref(true)
+  const error          = ref('')
+  const expiredSession = ref(false)  // true quand un collab tente de se connecter après sa date de départ
 
   // Référence au listener pour pouvoir le nettoyer
   let _unsubscribe = null
@@ -31,8 +32,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   /* ── Connexion ── */
   async function signIn(email, password) {
-    error.value   = ''
-    loading.value = true
+    error.value          = ''
+    expiredSession.value = false  // efface le message d'accès expiré au nouvel essai
+    loading.value        = true
     try {
       await signInWithEmailAndPassword(auth, email, password)
       // user.value sera mis à jour par onAuthStateChanged
@@ -69,5 +71,5 @@ export const useAuthStore = defineStore('auth', () => {
     return msgs[code] || 'Une erreur est survenue. Réessayez.'
   }
 
-  return { user, loading, error, init, signIn, signOut }
+  return { user, loading, error, expiredSession, init, signIn, signOut }
 })

@@ -716,6 +716,7 @@
 }
 .btn-etp-import:hover:not(:disabled) { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
 .btn-etp-import:disabled { opacity: 0.6; cursor: default; }
+
 .btn-spinner-sm {
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid rgba(99,102,241,0.3); border-top-color: var(--accent);
@@ -2091,8 +2092,20 @@ async function selectDay(date) {
 const mergedRessources = computed(() => {
   if (!dayData.value || !userStore.users.length) return []
 
-  const activePeople = userStore.users
-    .filter(p => admin.isActiveOn(p, selectedDate.value))
+  // Admin planning :
+  // - Arrivée : date-relative (apparaît à sa date d'arrivée sur le planning)
+  // - Départ  : basé sur aujourd'hui (caché dès que depart < today, i.e. parti hier)
+  // - hiddenFromPublic : toujours masqué même en admin
+  const todayAdmin = new Date(); todayAdmin.setHours(0, 0, 0, 0)
+  const activePeople = userStore.users.filter(p => {
+    const parse = str => { if (!str) return null; const pt = str.trim().split(' '); return pt.length >= 3 ? new Date(+pt[2], +pt[1] - 1, +pt[0]) : null }
+    const d0      = new Date(selectedDate.value); d0.setHours(0, 0, 0, 0)
+    const arrivee = parse(p.arrivee)
+    const depart  = parse(p.depart)
+    if (!arrivee || d0 < arrivee) return false          // pas encore arrivé ce jour-là
+    if (depart && todayAdmin > depart) return false     // parti hier ou avant
+    return true
+  })
   const activeIds = new Set(activePeople.map(p => p.id || p.uid))
 
   // Garder uniquement les ressources Firestore dont la personne est encore active

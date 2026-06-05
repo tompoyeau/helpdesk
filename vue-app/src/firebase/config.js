@@ -14,3 +14,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 export const db   = getFirestore(app)
 export const auth = getAuth(app)
+
+// App secondaire — uniquement pour créer des comptes Auth sans déconnecter l'admin
+const secondaryApp  = initializeApp(firebaseConfig, 'secondary')
+export const authSecondary = getAuth(secondaryApp)

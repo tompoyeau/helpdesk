@@ -60,8 +60,14 @@
           </button>
         </div>
 
+        <!-- Accès expiré -->
+        <div v-if="auth.expiredSession" class="login-expired">
+          <ShieldOff :size="13" />
+          Votre accès à Helio a expiré. Contactez votre responsable.
+        </div>
+
         <!-- Erreur -->
-        <div v-if="auth.error" class="login-error">
+        <div v-else-if="auth.error" class="login-error">
           <AlertCircle :size="13" />
           {{ auth.error }}
         </div>
@@ -85,7 +91,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
-import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-vue-next'
+import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ShieldOff } from 'lucide-vue-next'
 
 const auth     = useAuthStore()
 const email    = ref('')

@@ -1,9 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { db } from '@/firebase/config'
+import { db, auth, authSecondary } from '@/firebase/config'
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch,
 } from 'firebase/firestore'
+import {
+  createUserWithEmailAndPassword,
+  signOut as fbSignOut,
+  sendPasswordResetEmail,
+} from 'firebase/auth'
 import { TIME_SLOTS } from '@/stores/dataStore'
 
 export { TIME_SLOTS }
@@ -69,6 +74,36 @@ export const useAdminStore = defineStore('admin', () => {
     const id = generatePersonneId()
     await setDoc(doc(db, 'personnes', id), { ...data, id })
     return id
+  }
+
+  /**
+   * Crée un compte Firebase Auth + doc Firestore (ID = UID Auth).
+   * Utilise l'app secondaire pour ne pas déconnecter l'admin.
+   * Envoie un email "définissez votre mot de passe" au nouveau collab.
+   */
+  /**
+   * Crée un compte Firebase Auth + doc Firestore (ID = UID Auth).
+   * Utilise l'app secondaire pour ne pas déconnecter l'admin.
+   * Envoie toujours un email "définissez votre mot de passe" au nouveau collab.
+   */
+  async function createPersonneWithAuth(data) {
+    // Mot de passe temporaire aléatoire — jamais communiqué, remplacé via reset email
+    const tempPwd = `Tmp${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}!`
+
+    // 1. Créer le compte Auth via l'app secondaire (session admin intacte)
+    const cred = await createUserWithEmailAndPassword(authSecondary, data.email, tempPwd)
+    const uid  = cred.user.uid
+
+    // 2. Déconnecter l'app secondaire immédiatement
+    await fbSignOut(authSecondary)
+
+    // 3. Envoyer l'email "définissez votre mot de passe"
+    await sendPasswordResetEmail(auth, data.email)
+
+    // 4. Créer le doc Firestore avec l'UID Auth comme clé
+    await setDoc(doc(db, 'personnes', uid), { ...data, id: uid })
+
+    return uid
   }
 
   async function updatePersonne(id, data) {
@@ -178,7 +213,7 @@ export const useAdminStore = defineStore('admin', () => {
     TIME_SLOTS,
     generatePersonneId, dateToId,
     inputToFirestore, firestoreToInput,
-    createPersonne, updatePersonne, deletePersonne,
+    createPersonne, createPersonneWithAuth, updatePersonne, deletePersonne,
     loadDayPlanning, saveDayPlanning, saveEtpAndFixed, clearMonthPlanning,
     parseBlocks, buildActivites, isActiveOn,
   }

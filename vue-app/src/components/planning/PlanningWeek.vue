@@ -353,7 +353,37 @@ function formatDateLabel(date) {
 function isToday(date) { return fmtIso(date) === fmtIso(new Date()) }
 
 const weekDates    = computed(() => getWeekDates(weekOffset.value))
-const activePeople = computed(() => data.activePersons())
+
+// Dernier jour de la période actuellement affichée (semaine ou mois)
+const browseEndDate = computed(() => {
+  if (viewMode.value === 'month') {
+    const dates = monthWorkDates.value
+    return dates.length ? new Date(dates.at(-1) + 'T12:00:00') : new Date()
+  }
+  const last = weekDates.value.at(-1)
+  return last ? new Date(last) : new Date()
+})
+
+// Parse 'DD MM YYYY' → Date
+function parsePersonDate(str) {
+  if (!str) return null
+  const p = str.trim().split(' ')
+  return p.length >= 3 ? new Date(+p[2], +p[1] - 1, +p[0]) : null
+}
+
+const activePeople = computed(() => {
+  const end = new Date(browseEndDate.value); end.setHours(23, 59, 59, 0)
+  // data.activePersons() filtre déjà arrivee <= today + depart >= today + !hiddenFromPublic
+  // On ajoute : arrivee <= fin de la période browsée (ne pas afficher avant l'arrivée réelle)
+  return data.activePersons().filter(name => {
+    const uid = data.nameToUid?.[name]
+    if (!uid) return true
+    const p = data.personnesData?.[uid]
+    if (!p?.arrivee) return true
+    const arrivee = parsePersonDate(p.arrivee)
+    return !arrivee || arrivee <= end
+  })
+})
 
 /* ── Changement de vue avec synchronisation de date ── */
 function goToday() {

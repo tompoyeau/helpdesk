@@ -88,8 +88,16 @@ onMounted(async () => {
 // (connexion initiale, login via LoginOverlay, déconnexion)
 watch(() => auth.user, async (newUser, oldUser) => {
   if (newUser && !oldUser) {
-    // Connexion : charge le rôle, les données, puis les notifications
+    // Connexion : charge le rôle (et vérifie la date de départ)
     await userStore.loadUser(newUser.uid)
+
+    // Accès révoqué : date de départ passée → déconnexion forcée
+    if (userStore.isDeparted) {
+      await auth.signOut()
+      auth.expiredSession = true
+      return
+    }
+
     await data.init()
     notifStore.subscribe(newUser.uid)
 
