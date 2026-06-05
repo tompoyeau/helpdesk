@@ -165,6 +165,50 @@ export const useAdminStore = defineStore('admin', () => {
     await batch.commit()
   }
 
+  /**
+   * Copie les documents de plannings_test vers plannings pour un mois donné.
+   * mode: 'overwrite' → écrase tout, 'empty_only' → ne touche que les jours absents de prod
+   * Retourne le nombre de jours copiés.
+   */
+  async function copyMonthToProd(isoDates, mode = 'overwrite') {
+    // 1. Lire tous les docs source (plannings_test) en parallèle
+    const sourceDocs = await Promise.all(
+      isoDates.map(async iso => {
+        const [y, m, d] = iso.split('-').map(Number)
+        const id   = dateToId(new Date(y, m - 1, d))
+        const snap = await getDoc(doc(db, 'plannings_test', id))
+        return { id, exists: snap.exists(), data: snap.exists() ? snap.data() : null }
+      })
+    )
+
+    // 2. En mode empty_only, vérifier quels jours existent déjà en prod
+    let prodExisting = new Set()
+    if (mode === 'empty_only') {
+      const checks = await Promise.all(
+        sourceDocs
+          .filter(s => s.exists)
+          .map(async s => {
+            const snap = await getDoc(doc(db, 'plannings', s.id))
+            return snap.exists() ? s.id : null
+          })
+      )
+      prodExisting = new Set(checks.filter(Boolean))
+    }
+
+    // 3. Écrire en batch (max 500 ops par batch Firestore)
+    const toCopy = sourceDocs.filter(s => s.exists && (mode === 'overwrite' || !prodExisting.has(s.id)))
+    const BATCH_SIZE = 400
+    for (let i = 0; i < toCopy.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db)
+      for (const { id, data } of toCopy.slice(i, i + BATCH_SIZE)) {
+        batch.set(doc(db, 'plannings', id), data)
+      }
+      await batch.commit()
+    }
+
+    return toCopy.length
+  }
+
   /* ── Activités : parse/build ── */
   // activites[] → [{code, startSlot, endSlot}]
   function parseBlocks(activites) {
@@ -214,7 +258,7 @@ export const useAdminStore = defineStore('admin', () => {
     generatePersonneId, dateToId,
     inputToFirestore, firestoreToInput,
     createPersonne, createPersonneWithAuth, updatePersonne, deletePersonne,
-    loadDayPlanning, saveDayPlanning, saveEtpAndFixed, clearMonthPlanning,
+    loadDayPlanning, saveDayPlanning, saveEtpAndFixed, clearMonthPlanning, copyMonthToProd,
     parseBlocks, buildActivites, isActiveOn,
   }
 })

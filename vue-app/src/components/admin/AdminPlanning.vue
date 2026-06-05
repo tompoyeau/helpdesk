@@ -54,6 +54,18 @@
         {{ clearingMonth ? 'Suppression…' : 'Nettoyer le mois' }}
       </button>
 
+      <!-- Publier en prod (mode test uniquement) -->
+      <button
+        v-if="viewMode === 'month' && admin.collectionName !== 'plannings'"
+        class="btn-publish-prod"
+        :disabled="publishingMonth"
+        @click="confirmPublishMonth = true"
+      >
+        <div v-if="publishingMonth" class="btn-spinner-sm" style="border-top-color:#fff"></div>
+        <ArrowUpFromLine v-else :size="12" />
+        {{ publishingMonth ? 'Publication…' : 'Publier en prod' }}
+      </button>
+
       <!-- Import ETP + Équipe Covéa -->
       <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
         <input ref="etpFileInput" type="file" accept=".xlsx,.xlsm,.xls" style="display:none" @change="onEtpFile" />
@@ -556,6 +568,46 @@
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <!-- Confirmation publication en prod -->
+    <Teleport to="body">
+      <div v-if="confirmPublishMonth" class="modal-backdrop" @click.self="confirmPublishMonth = false">
+        <div class="modal-confirm-box" style="max-width:420px">
+          <div class="modal-confirm-icon" style="color:#6366f1;background:rgba(99,102,241,0.1)">
+            <ArrowUpFromLine :size="22" />
+          </div>
+          <h3 class="modal-confirm-title">Publier en production ?</h3>
+          <p class="modal-confirm-body" style="margin-bottom:4px">
+            Les plannings de <strong>{{ monthNavLabel }}</strong> (base&nbsp;<strong>test</strong>)
+            seront copiés vers la base&nbsp;<strong>production</strong>.
+          </p>
+          <p class="modal-confirm-body" style="font-size:0.75rem;opacity:0.8">
+            Seuls les jours ayant des données en test seront copiés.
+          </p>
+          <div class="modal-confirm-actions" style="flex-direction:column;gap:8px;width:100%;margin-top:12px">
+            <button class="btn-publish-confirm" @click="doPublishMonth('overwrite')" :disabled="publishingMonth">
+              <ArrowUpFromLine :size="13" /> Écraser les jours existants
+            </button>
+            <button class="btn-confirm-cancel" style="width:100%;justify-content:center" @click="doPublishMonth('empty_only')" :disabled="publishingMonth">
+              Remplir les jours vides seulement
+            </button>
+            <button class="btn-confirm-cancel" style="width:100%;justify-content:center;color:var(--text-muted)" @click="confirmPublishMonth = false">
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Toast résultat publication -->
+    <Teleport to="body">
+      <Transition name="toast-slide">
+        <div v-if="publishResult" class="publish-toast">
+          <ArrowUpFromLine :size="13" />
+          {{ publishResult }}
+        </div>
+      </Transition>
     </Teleport>
 
     <!-- Confirmation écrasement semaine -->
@@ -1153,6 +1205,38 @@
 .btn-clear-month:hover:not(:disabled) { background: color-mix(in srgb, #ef4444 20%, var(--bg-surface)); }
 .btn-clear-month:disabled { opacity: 0.6; cursor: default; }
 
+.btn-publish-prod {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 600;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); color: #fff;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-publish-prod:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-publish-prod:disabled { opacity: 0.6; cursor: default; }
+
+.btn-publish-confirm {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 9px 18px; font-size: 0.8125rem; font-weight: 600;
+  background: var(--accent); border: none;
+  border-radius: var(--radius-sm); color: #fff; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-publish-confirm:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-publish-confirm:disabled { opacity: 0.6; cursor: default; }
+
+.publish-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border-radius: var(--radius-md);
+  background: #eef2ff; border: 1px solid #a5b4fc;
+  color: #3730a3; font-size: 0.8125rem; font-weight: 500;
+  box-shadow: var(--shadow-md); z-index: 1100; white-space: nowrap;
+}
+.toast-slide-enter-active, .toast-slide-leave-active { transition: all 0.25s ease; }
+.toast-slide-enter-from, .toast-slide-leave-to { opacity: 0; transform: translateX(-50%) translateY(12px); }
+
 /* Modale confirmation */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 1000;
@@ -1421,7 +1505,7 @@ const monthOffset = ref(0)        // mois relatif au mois courant
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2, ArrowUpFromLine,
 } from 'lucide-vue-next'
 import { useAdminStore, ETP_CODES, QUICK_PRESETS, TIME_SLOTS } from '@/stores/adminStore'
 import { parseEtpFromExcel } from '@/stores/forecastStore'
@@ -1441,6 +1525,9 @@ const etpImporting     = ref(false)
 const etpImportMsg     = ref('')   // feedback message
 const confirmClearMonth  = ref(false)
 const clearingMonth      = ref(false)
+const confirmPublishMonth = ref(false)
+const publishingMonth     = ref(false)
+const publishResult       = ref('')
 const clearPersonTarget  = ref(null)   // fullName en attente de confirmation
 const weekOverwriteModal = ref({ show: false, resolve: null, conflicts: [], subtitle: '', labelOverwrite: '', noEmptyOnly: false })
 
@@ -1901,6 +1988,25 @@ async function doClearMonth() {
     await loadMonthData()
   } finally {
     clearingMonth.value = false
+  }
+}
+
+/* ── Publication du mois en production ── */
+async function doPublishMonth(mode) {
+  confirmPublishMonth.value = false
+  publishingMonth.value = true
+  publishResult.value   = ''
+  try {
+    const count = await admin.copyMonthToProd(monthWorkDates.value, mode)
+    publishResult.value = count > 0
+      ? `✓ ${count} jour${count > 1 ? 's' : ''} publié${count > 1 ? 's' : ''} en production`
+      : 'Aucun jour à publier (base test vide pour ce mois)'
+    setTimeout(() => { publishResult.value = '' }, 5000)
+  } catch (err) {
+    publishResult.value = `Erreur : ${err.message}`
+    setTimeout(() => { publishResult.value = '' }, 6000)
+  } finally {
+    publishingMonth.value = false
   }
 }
 
