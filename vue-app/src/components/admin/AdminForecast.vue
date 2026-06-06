@@ -46,20 +46,12 @@
     <!-- ── ÉTAPE 2 : Options ── -->
     <template v-if="fc.forecast">
       <div class="options-bar">
-        <div class="opt-group">
-          <span class="opt-label">BO simultanés max</span>
-          <div class="stepper">
-            <button class="stepper-btn" @click="fc.maxBO = Math.max(0, fc.maxBO - 1)">−</button>
-            <span class="stepper-val">{{ fc.maxBO }}</span>
-            <button class="stepper-btn" @click="fc.maxBO++">+</button>
-          </div>
-        </div>
         <button class="btn-info" @click="showInfoModal = true">
           <Info :size="13" />
           <span>Règles</span>
         </button>
         <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:8px">
-          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi · pas de OFF si &lt; 3 mois d'ancienneté
+          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi · pas de journées vertes si &lt; 3 mois d'ancienneté
         </span>
         <!-- Option absences base test -->
         <label class="opt-test-absences" :class="{ active: useTestAbsences }">
@@ -311,7 +303,7 @@
           <!-- BO -->
           <div class="info-section">
             <div class="info-section-title">Back-office (BO)</div>
-            <p>Le BO est attribué en rotation équitable parmi les collaborateurs éligibles (<code>peutBO = true</code>), dans la limite du nombre de BO simultanés configuré ci-dessus. Une personne en BO n'est pas affectée à un créneau horaire cette semaine-là.</p>
+            <p>Le nombre de postes BO par jour est lu directement depuis le fichier Excel (nombre de lignes "BO" dans chaque bloc journée). Le BO est attribué en rotation équitable parmi les collaborateurs éligibles (<code>peutBO = true</code>) : un classement est établi en début de semaine selon le nombre de semaines BO déjà effectuées, et les <em>N</em> premiers de ce classement font BO chaque jour. Les mêmes personnes restent en BO toute la semaine ; si le besoin augmente un jour donné, on descend dans le classement. Une personne en BO n'est pas affectée à un créneau horaire ce jour-là.</p>
           </div>
 
         </div>

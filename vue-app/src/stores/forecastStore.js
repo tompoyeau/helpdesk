@@ -465,8 +465,9 @@ export async function parseEtpFromExcel(file) {
       const etpNum = Math.round(Number(etpRaw))
       if (!etpRaw || isNaN(etpNum) || etpNum <= 0) continue
 
-      // Personnes fixes (MACA, ALRE)
+      // Personnes fixes (MACA, ALRE) + nombre de postes BO
       const fixed = {}
+      let boCount  = 0
       let blockEnd = wRows.length
       for (let k = i + 1; k < wRows.length; k++) {
         if (wRows[k]?.[1] === 'PREV') { blockEnd = k; break }
@@ -474,6 +475,7 @@ export async function parseEtpFromExcel(file) {
       for (let j = i + 1; j < blockEnd; j++) {
         const r = wRows[j]
         if (!r) continue
+        if (String(r[0] || '').trim().toUpperCase() === 'BO') { boCount++; continue }
         for (let col = 0; col < Math.min(r.length, 6); col++) {
           const cell = String(r[col] || '').trim().toUpperCase()
           if (!FIXED_IDS.includes(cell)) continue
@@ -489,7 +491,7 @@ export async function parseEtpFromExcel(file) {
       }
 
       const dist = resolveEtpDist(etpNum)
-      result[iso] = { etp: etpNum, fixed, matin: dist.matin, midi: dist.midi, aprem: dist.aprem, soir: dist.soir }
+      result[iso] = { etp: etpNum, fixed, bo: boCount, matin: dist.matin, midi: dist.midi, aprem: dist.aprem, soir: dist.soir }
     }
   }
 
@@ -612,10 +614,11 @@ export const useForecastStore = defineStore('forecast', () => {
           const etpNum = Math.round(Number(etpRaw))
           if (!etpRaw || isNaN(etpNum) || etpNum <= 0) continue
 
-          // ── Détecter les personnes fixes (MACA, ALRE) dans ce bloc jour ──
+          // ── Détecter les personnes fixes (MACA, ALRE) et le nombre de BO dans ce bloc jour ──
           // On scanne toutes les lignes du bloc jusqu'à la prochaine ligne PREV.
-          // Pour chaque personne fixe trouvée, on lit le shift dans les cellules de la même ligne.
+          // Chaque ligne dont la col A vaut "BO" = 1 poste BO demandé pour ce jour.
           const fixed = {}
+          let boCount  = 0
           let blockEnd = wRows.length
           for (let k = i + 1; k < wRows.length; k++) {
             if (wRows[k]?.[1] === 'PREV') { blockEnd = k; break }
@@ -623,6 +626,8 @@ export const useForecastStore = defineStore('forecast', () => {
           for (let j = i + 1; j < blockEnd; j++) {
             const r = wRows[j]
             if (!r) continue
+            // Compter les lignes BO (chaque ligne = 1 poste BO demandé)
+            if (String(r[0] || '').trim().toUpperCase() === 'BO') { boCount++; continue }
             for (let col = 0; col < Math.min(r.length, 6); col++) {
               const cell = String(r[col] || '').trim().toUpperCase()
               if (!FIXED_IDS.includes(cell)) continue
@@ -648,6 +653,7 @@ export const useForecastStore = defineStore('forecast', () => {
             soir:  dist.soir,
             isSam: dow === 6,
             fixed,   // { 'MACA': 'matin', 'ALRE': 'soir' } — peut être vide
+            bo:    boCount,  // nombre de postes BO demandés ce jour (lu depuis l'Excel)
           }
         }
       }
@@ -703,6 +709,71 @@ export const useForecastStore = defineStore('forecast', () => {
 
     const sortedWeeks = Object.entries(weekGroups).sort(([a], [b]) => a.localeCompare(b))
 
+    // ── Pré-chargement semaine partielle en début de mois ──────────────────────────
+    // Si le premier jour du forecast n'est pas un lundi, on charge les jours ouvrés
+    // qui précèdent dans la même semaine (dans plannings_test, fallback plannings)
+    // pour connaître l'horaire déjà en cours et le prolonger naturellement.
+    let firstWeekSeedFamilies = {}   // { name: fam } — seed weekFamilies de la 1ère semaine
+    {
+      const firstForecastDate = dates[0]
+      if (firstForecastDate) {
+        const firstDay  = new Date(firstForecastDate + 'T12:00:00')
+        const dayOfWeek = firstDay.getDay()   // 0=dim, 1=lun, …, 6=sam
+
+        if (dayOfWeek !== 1) {   // le mois ne commence pas un lundi
+          // Jours de la semaine AVANT le 1er jour du forecast
+          const daysBack   = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+          const prefixDays = []
+          for (let i = daysBack; i >= 1; i--) {
+            const d = new Date(firstForecastDate + 'T12:00:00')
+            d.setDate(d.getDate() - i)
+            const dow = d.getDay()
+            if (dow === 0 || dow === 6) continue   // skip week-end
+            const iso = fmtIso(d)
+            if (!isFerie(iso)) prefixDays.push(iso)
+          }
+
+          if (prefixDays.length) {
+            const famCount = {}   // { name: { matin, midi, aprem, soir } }
+            await Promise.all(prefixDays.map(async iso => {
+              try {
+                const [yy, mm, dd] = iso.split('-').map(Number)
+                const dayId = admin.dateToId(new Date(yy, mm - 1, dd))
+                // Priorité plannings_test, fallback plannings
+                let snap = await getDoc(doc(db, 'plannings_test', dayId))
+                if (!snap.exists()) snap = await getDoc(doc(db, 'plannings', dayId))
+                if (!snap.exists()) return
+                for (const r of snap.data().ressources || []) {
+                  const name = `${r.nom} ${r.prenom}`
+                  const code = (r.activites || []).find(a => a && a !== '')
+                  if (!code) continue
+                  // Retrouver le nom du shift depuis son code Firestore
+                  const entry = Object.entries(SHIFT_PATTERNS).find(([, p]) => p.code === code)
+                  if (!entry) continue
+                  const fam = SHIFT_FAMILY_MAP[entry[0]]
+                  if (!fam) continue   // absences / BO / codes non-shift → ignorer
+                  if (!famCount[name]) famCount[name] = { matin: 0, midi: 0, aprem: 0, soir: 0 }
+                  famCount[name][fam]++
+                }
+              } catch { /* jour absent des collections → ignoré */ }
+            }))
+
+            // Famille dominante par personne (tiebreak : soir > aprem > midi > matin)
+            for (const [name, counts] of Object.entries(famCount)) {
+              const max = Math.max(counts.matin, counts.midi, counts.aprem, counts.soir)
+              if (max === 0) continue
+              if      (counts.soir  === max) firstWeekSeedFamilies[name] = 'soir'
+              else if (counts.aprem === max) firstWeekSeedFamilies[name] = 'aprem'
+              else if (counts.midi  === max) firstWeekSeedFamilies[name] = 'midi'
+              else                           firstWeekSeedFamilies[name] = 'matin'
+            }
+          }
+        }
+      }
+    }
+    const hasSeed    = Object.keys(firstWeekSeedFamilies).length > 0
+    let   isFirstWeek = true
+
     for (const [, weekDates] of sortedWeeks) {
       const workDates = weekDates  // plus de samedis dans le forecast
 
@@ -735,31 +806,35 @@ export const useForecastStore = defineStore('forecast', () => {
       const available    = activePeople
       const weekRestDays = {}   // { name: n } — jours Agence/vides cette semaine (max 2)
 
-      // ── 3. Attribution BO (hebdomadaire, par rotation équitable) ──
-      const boNames = new Set()
-      if (maxBO.value > 0 && workDates.length) {
-        const boEligible = available
-          .filter(p => p.peutBO)
-          .sort((a, b) => {
-            const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
-            return (boWeeksUsed[na] || 0) - (boWeeksUsed[nb] || 0) || na.localeCompare(nb, 'fr')
-          })
-          .slice(0, maxBO.value)
-        for (const p of boEligible) {
-          const name = `${p.nom} ${p.prenom}`
-          boNames.add(name)
-          boWeeksUsed[name] = (boWeeksUsed[name] || 0) + 1
-          if (!matrix[name]) matrix[name] = {}
-          for (const iso of workDates) {
-            if (!matrix[name][iso]) matrix[name][iso] = 'BO'
-          }
-        }
-      }
+      // ── 3. Attribution BO ──────────────────────────────────────────────────────────────────
+      // Roster hebdo : on trie les candidats une fois pour la semaine (équité sur les semaines
+      // avec BO). Chaque jour, on prend les fc.bo premiers du roster qui ne sont pas absents.
+      // Si le nombre de BO augmente d'un jour à l'autre, on descend dans la liste — toujours
+      // les mêmes personnes tant que le quota ne dépasse pas leur rang.
+      const maxBoThisWeek = workDates.length
+        ? Math.max(0, ...workDates.map(iso => forecast.value[iso]?.bo ?? 0))
+        : 0
+      // Liste ordonnée de TOUS les candidats BO (avec buffer pour les absences)
+      const boRosterWeek = available
+        .filter(p => p.peutBO)
+        .sort((a, b) => {
+          const na = `${a.nom} ${a.prenom}`, nb = `${b.nom} ${b.prenom}`
+          return (boWeeksUsed[na] || 0) - (boWeeksUsed[nb] || 0) || na.localeCompare(nb, 'fr')
+        })
+      // Personnes ayant fait au moins 1 jour BO cette semaine (pour mise à jour équité)
+      const boNamesThisWeek = new Set()
+
+      // Réinitialise le flag après la 1ère semaine traitée (avec ou sans workDates)
+      const wasFirstWeek = isFirstWeek
+      isFirstWeek = false
 
       if (workDates.length) {
         // ── 4. Assignation JOURNALIÈRE ETP-stricte ──
         // weekFamilies = référence cohérence établie au 1er jour ouvré
-        const weekFamilies = {}    // { name: fam }
+        // 1ère semaine : pré-seedée depuis les jours précédents si mois commence en cours de semaine
+        const weekFamilies = (wasFirstWeek && hasSeed)
+          ? { ...firstWeekSeedFamilies }
+          : {}    // { name: fam }
         const dayFamilyMap = {}    // { iso: { name: fam } }
 
         // Personnes à "contrainte mixte" : ont au moins un shift TLT-only ET au moins un shift OK on-site.
@@ -787,10 +862,27 @@ export const useForecastStore = defineStore('forecast', () => {
 
           const totalNeeded = dayNeeds.matin + dayNeeds.midi + dayNeeds.aprem + dayNeeds.soir
 
-          // Pool du jour : disponibles, non absents, non BO
+          // ── BO du jour : fc.bo premiers du roster hebdo, en sautant les absents ──
+          const boNamesDay = new Set()
+          {
+            const dayBoCount = fc.bo ?? 0
+            let picked = 0
+            for (const p of boRosterWeek) {
+              if (picked >= dayBoCount) break
+              const name = `${p.nom} ${p.prenom}`
+              if (dayAbsences[name]?.[iso]) continue   // absent ce jour → on descend dans la liste
+              boNamesDay.add(name)
+              boNamesThisWeek.add(name)
+              if (!matrix[name]) matrix[name] = {}
+              matrix[name][iso] = 'BO'
+              picked++
+            }
+          }
+
+          // Pool du jour : disponibles, non absents, non BO ce jour
           const pool = available.filter(p => {
             const name = `${p.nom} ${p.prenom}`
-            return !boNames.has(name) && !dayAbsences[name]?.[iso]
+            return !boNamesDay.has(name) && !dayAbsences[name]?.[iso]
           })
 
           // ── Rotation équitable des jours Agence (slots vides) ──
@@ -860,11 +952,17 @@ export const useForecastStore = defineStore('forecast', () => {
           }
         }
 
+        // Équité BO : incrémenter d'1 semaine pour chaque personne ayant fait du BO cette semaine
+        for (const name of boNamesThisWeek) {
+          boWeeksUsed[name] = (boWeeksUsed[name] || 0) + 1
+        }
+
         // ── 5. TLT : 2 jours max/personne/semaine, pas mercredi, ≤50%/famille/jour ──
         const nonWedDays = workDates.filter(iso => new Date(iso + 'T12:00:00').getDay() !== 3)
+        // TLT : éligibles = tous les peutTLT (les jours BO sont filtrés naturellement via dayFamilyMap)
         const tltAllowed = new Set(
           available
-            .filter(p => p.peutTLT !== false && !boNames.has(`${p.nom} ${p.prenom}`))
+            .filter(p => p.peutTLT !== false)
             .map(p => `${p.nom} ${p.prenom}`)
         )
 
@@ -986,8 +1084,7 @@ export const useForecastStore = defineStore('forecast', () => {
           }
         }
         for (const p of activePeople) {
-          const name = `${p.nom} ${p.prenom}`
-          if (boNames.has(name)) continue
+          const name     = `${p.nom} ${p.prenom}`
           const counts   = weekCounts[name] || {}
           const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]
           if (dominant) {
