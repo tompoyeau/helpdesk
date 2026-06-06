@@ -336,9 +336,28 @@ function equityScore(history, personName, shift, lastWeekShift, noAssignStreak) 
   return score
 }
 
+/**
+ * Retourne le nombre de mois d'ancienneté d'une personne à une date ISO donnée.
+ * Format arrivee Firestore : "DD MM YYYY"
+ * Retourne Infinity si pas de date d'arrivée (considéré comme senior).
+ */
+function monthsSinceArrival(person, isoDate) {
+  if (!person.arrivee) return Infinity
+  const parts = person.arrivee.trim().split(' ')
+  if (parts.length < 3) return Infinity
+  const arrivee = new Date(+parts[2], +parts[1] - 1, +parts[0])
+  const day     = new Date(isoDate + 'T12:00:00')
+  const months  = (day.getFullYear() - arrivee.getFullYear()) * 12
+               + (day.getMonth()     - arrivee.getMonth())
+               + (day.getDate()      >= arrivee.getDate() ? 0 : -1)
+  return Math.max(0, months)
+}
+
 // Assignation ETP-stricte par jour avec cohérence hebdo
-// weekFamilies = { name: fam } — shift établi au J1, sert de référence pour les jours suivants
-function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies) {
+// weekFamilies  = { name: fam }  — shift établi au J1, sert de référence pour les jours suivants
+// mustAssign    = Set<name>       — ne peuvent pas être en OFF (< 3 mois)
+// blockedShifts = { name: Set }  — shifts interdits ce jour (contrainte mixte on-site)
+function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies, mustAssign = new Set(), blockedShifts = {}) {
   const assignments = {}
   const remaining   = new Set(pool.map(p => `${p.nom} ${p.prenom}`))
   const poolSize    = remaining.size
@@ -372,6 +391,10 @@ function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, we
       const wf = weekFamilies?.[name]
       if      (wf === shift) score += 0.8   // même shift que J1 → fort bonus de cohérence
       else if (wf != null)   score -= 0.6   // shift différent de J1 → pénalité modérée
+      // Boost fort pour les < 3 mois : toujours assignés avant les autres
+      if (mustAssign.has(name))             score += 100
+      // Shift bloqué (contrainte mixte : TLT-only sur jour sans TLT) → impossible
+      if (blockedShifts[name]?.has(shift))  score -= 200
       return { name, score }
     }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'fr'))
 
@@ -739,6 +762,18 @@ export const useForecastStore = defineStore('forecast', () => {
         const weekFamilies = {}    // { name: fam }
         const dayFamilyMap = {}    // { iso: { name: fam } }
 
+        // Personnes à "contrainte mixte" : ont au moins un shift TLT-only ET au moins un shift OK on-site.
+        // → Exclues de weekFamilies (semaine mixte autorisée)
+        // → Sur les jours sans TLT possible (mercredi), leurs shifts TLT-only sont bloqués
+        const mixedConstraintNames = new Set(
+          available.filter(p => {
+            const prefs = p.forecastPrefs || {}
+            const hasTlt    = ['matin','midi','aprem','soir'].some(s => prefs[s] === 'tlt')
+            const hasOnSite = ['matin','midi','aprem','soir'].some(s => prefs[s] !== 'tlt')
+            return hasTlt && hasOnSite && p.peutTLT !== false
+          }).map(p => `${p.nom} ${p.prenom}`)
+        )
+
         for (const iso of workDates) {
           const fc       = forecast.value[iso]
           const dayNeeds = { matin: fc.matin, midi: fc.midi, aprem: fc.aprem, soir: fc.soir }
@@ -763,8 +798,18 @@ export const useForecastStore = defineStore('forecast', () => {
           const surplus = pool.length - totalNeeded
           let assignPool = pool
 
+          // Noms des collabs avec < 3 mois d'ancienneté ce jour → ne peuvent pas être en OFF
+          const mustAssignNames = new Set(
+            pool.filter(p => monthsSinceArrival(p, iso) < 3).map(p => `${p.nom} ${p.prenom}`)
+          )
+
           if (surplus > 0) {
-            const restEligible = pool.filter(p => (weekRestDays[`${p.nom} ${p.prenom}`] || 0) < 2)
+            const restEligible = pool.filter(p => {
+              const name = `${p.nom} ${p.prenom}`
+              if ((weekRestDays[name] || 0) >= 2) return false          // déjà 2 jours OFF cette semaine
+              if (mustAssignNames.has(name))       return false          // < 3 mois → jamais en OFF
+              return true
+            })
             const restCount    = Math.min(surplus, restEligible.length)
 
             const sorted = [...restEligible].sort((a, b) => {
@@ -791,12 +836,26 @@ export const useForecastStore = defineStore('forecast', () => {
             }
           }
 
-          dayFamilyMap[iso] = assignShifts(assignPool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies)
+          // Mercredi sans TLT : bloquer les shifts TLT-only des personnes à contrainte mixte
+          const isWednesday = new Date(iso + 'T12:00:00').getDay() === 3
+          const blockedShifts = {}
+          if (isWednesday) {
+            for (const p of assignPool) {
+              const name = `${p.nom} ${p.prenom}`
+              if (!mixedConstraintNames.has(name)) continue
+              const prefs = p.forecastPrefs || {}
+              const blocked = ['matin','midi','aprem','soir'].filter(s => prefs[s] === 'tlt')
+              if (blocked.length) blockedShifts[name] = new Set(blocked)
+            }
+          }
+
+          dayFamilyMap[iso] = assignShifts(assignPool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies, mustAssignNames, blockedShifts)
 
           // Le 1er jour ouvré fixe la référence de cohérence pour le reste de la semaine
+          // Les personnes à contrainte mixte sont exclues : leur semaine peut varier librement
           if (iso === workDates[0]) {
             for (const [name, fam] of Object.entries(dayFamilyMap[iso])) {
-              if (fam) weekFamilies[name] = fam
+              if (fam && !mixedConstraintNames.has(name)) weekFamilies[name] = fam
             }
           }
         }
@@ -886,7 +945,16 @@ export const useForecastStore = defineStore('forecast', () => {
               return true
             })
 
-            if (!partner) continue  // aucun partenaire disponible → laisse en l'état (visible manuellement)
+            if (!partner) {
+              // Aucun partenaire disponible — si personne à contrainte mixte :
+              // réassignation forcée vers son meilleur shift on-site
+              if (mixedConstraintNames.has(name)) {
+                const prefs = p.forecastPrefs || {}
+                const onSiteOk = ['midi','aprem','matin','soir'].filter(s => prefs[s] !== 'tlt')
+                if (onSiteOk.length) dayFamilyMap[iso][name] = onSiteOk[0]
+              }
+              continue
+            }
 
             const partnerName = `${partner.nom} ${partner.prenom}`
             const partnerFam  = dayFamilyMap[iso][partnerName]
@@ -1005,15 +1073,8 @@ export const useForecastStore = defineStore('forecast', () => {
         const date  = new Date(iso + 'T12:00:00')
         const dayId = admin.dateToId(date)
 
-        // Toujours charger le doc existant : sert au check overwrite ET au backup undo
+        // Toujours charger le doc existant : sert au backup undo et à la préservation des données
         const snap = await getDoc(doc(db, collection, dayId))
-
-        if (!overwrite && snap.exists()) {
-          const existing = snap.data().ressources || []
-          if (existing.some(r => (r.activites || []).some(a => a && a !== ''))) {
-            skipped++; continue
-          }
-        }
 
         // Sauvegarde pour restauration éventuelle
         backup[dayId] = snap.exists() ? snap.data() : null
@@ -1022,7 +1083,7 @@ export const useForecastStore = defineStore('forecast', () => {
           .filter(p => admin.isActiveOn(p, date))
           .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr'))
 
-        // Index des ressources existantes par nom (pour préserver les absences)
+        // Index des ressources existantes par nom (pour préserver les absences et, si !overwrite, les horaires déjà remplis)
         const existingByName = {}
         if (snap.exists()) {
           for (const r of snap.data().ressources || []) {
@@ -1038,6 +1099,10 @@ export const useForecastStore = defineStore('forecast', () => {
           if (existing && hasProtectedActivity(existing.activites)) {
             return existing
           }
+          // Si mode "ne pas écraser" et que le collab a déjà un horaire → on le conserve
+          if (!overwrite && existing && (existing.activites || []).some(a => a && a !== '')) {
+            return existing
+          }
           return {
             nom:        p.nom,
             prenom:     p.prenom,
@@ -1045,6 +1110,16 @@ export const useForecastStore = defineStore('forecast', () => {
             activites:  shift ? buildActivites(shift) : new Array(45).fill(''),
           }
         })
+
+        // Si le jour existait déjà et qu'aucun collab n'a été réellement modifié → compter comme skipped
+        const anyChanged = activePeople.some(p => {
+          const name     = `${p.nom} ${p.prenom}`
+          const existing = existingByName[name]
+          if (existing && hasProtectedActivity(existing.activites)) return false
+          if (!overwrite && existing && (existing.activites || []).some(a => a && a !== '')) return false
+          return true
+        })
+        if (!anyChanged && snap.exists()) { skipped++; continue }
 
         // Conserver l'ETP Excel et les horaires fixes (MACA/ALRE) dans le document
         const fcDay = forecast.value[iso]

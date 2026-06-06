@@ -59,7 +59,7 @@
           <span>Règles</span>
         </button>
         <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:8px">
-          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi
+          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi · pas de OFF si &lt; 3 mois d'ancienneté
         </span>
         <!-- Option absences base test -->
         <label class="opt-test-absences" :class="{ active: useTestAbsences }">
@@ -98,20 +98,14 @@
               <span class="toggle-track"></span>
               <span class="opt-label" style="margin-left:6px">Écraser existants</span>
             </label>
-            <label class="toggle">
-              <input type="checkbox" v-model="testMode" />
-              <span class="toggle-track toggle-track-test"></span>
-              <span class="opt-label" style="margin-left:6px">Mode test</span>
-            </label>
             <button
-              class="btn-apply"
-              :class="{ 'btn-apply-test': testMode }"
+              class="btn-apply btn-apply-test"
               :disabled="fc.generating"
               @click="doApply"
             >
               <div v-if="fc.generating" class="btn-spinner"></div>
               <Wand2 v-else :size="14" />
-              <span>{{ fc.generating ? `Application… (${genProgress}/${genTotal})` : (testMode ? 'Appliquer (test)' : 'Appliquer') }}</span>
+              <span>{{ fc.generating ? `Application… (${genProgress}/${genTotal})` : 'Appliquer (test)' }}</span>
             </button>
           </div>
         </div>
@@ -889,8 +883,8 @@
 <script>
 import { ref } from 'vue'
 // Persistants entre les changements d'onglets (réinitialisés uniquement au refresh)
-const overwrite = ref(false)
-const testMode  = ref(false)
+const overwrite       = ref(false)
+const useTestAbsences = ref(false)
 </script>
 
 <script setup>
@@ -910,8 +904,7 @@ const data      = useDataStore()
 
 const fileInput   = ref(null)
 const dragOver    = ref(false)
-const useTestAbsences = ref(false)   // lire les absences depuis plannings_test
-// overwrite et testMode sont définis en module-scope (persistants entre onglets)
+// overwrite et useTestAbsences sont définis en module-scope (persistants entre onglets)
 const genProgress  = ref(0)
 const genTotal     = ref(0)
 const undoProgress = ref(0)
@@ -1053,7 +1046,7 @@ async function doApply() {
   await fc.applyPreview({
     persons:    userStore.users,
     overwrite:  overwrite.value,
-    collection: testMode.value ? 'plannings_test' : 'plannings',
+    collection: 'plannings_test',
     onProgress: (n, total) => { genProgress.value = n; genTotal.value = total },
   })
 }
