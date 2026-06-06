@@ -268,7 +268,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   filterPerson: { type: String, default: null },
@@ -299,11 +299,23 @@ const modalDate   = ref('')
 /* ── Favoris Firestore ── */
 const favorites = ref([])
 
+function onResize() {
+  if (window.innerWidth <= 768 && viewMode.value === 'month') viewMode.value = 'week'
+}
+
 onMounted(async () => {
+  // Forcer vue semaine si déjà en mobile à l'ouverture
+  onResize()
+  window.addEventListener('resize', onResize)
+
   const uid = auth.user?.uid
   if (!uid) return
   const snap = await getDoc(doc(db, 'personnes', uid))
   if (snap.exists()) favorites.value = snap.data().planningFavorites || []
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
 })
 
 async function persistFavorites() {
@@ -581,6 +593,9 @@ const fixedPeopleMonth = computed(() =>
 /* ── Toggle vue ── */
 .view-mode-toggle {
   display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+@media (max-width: 768px) {
+  .view-mode-toggle { display: none !important; }
 }
 .vm-btn {
   display: inline-flex; align-items: center; gap: 4px;
