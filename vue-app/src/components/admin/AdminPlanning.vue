@@ -1537,8 +1537,9 @@ const quickSavingCells = ref(new Set())
 
 /* ── Drag (cliquer-glisser sur une ligne) ── */
 const isDragging   = ref(false)
-const dragFullName = ref(null)
-const dragIsos     = ref(new Set())
+const dragFullName  = ref(null)
+const dragStartIso  = ref(null)   // iso au mousedown — pour drag bidirectionnel
+const dragIsos      = ref(new Set())
 
 const QUICK_CHIP_GROUPS = [
   { label: 'Matin',   codes: ['0', '9', '12', '20', '28'] },
@@ -1564,16 +1565,24 @@ function onCellMouseDown(event, fullName, iso) {
   if (monthMatrix.value[fullName]?.[iso]?.inactive) return
   if (monthSamedis.value.has(iso) || monthFeries.value.has(iso)) return
   event.preventDefault()
-  isDragging.value  = true
+  isDragging.value   = true
   dragFullName.value = fullName
-  dragIsos.value    = new Set([iso])
+  dragStartIso.value = iso
+  dragIsos.value     = new Set([iso])
 }
 
 function onCellMouseEnter(fullName, iso) {
   if (!isDragging.value || fullName !== dragFullName.value) return
   if (monthMatrix.value[fullName]?.[iso]?.inactive) return
   if (monthSamedis.value.has(iso) || monthFeries.value.has(iso)) return
-  dragIsos.value = new Set([...dragIsos.value, iso])
+  // Recalcule la plage depuis dragStartIso jusqu'à iso (bidirectionnel)
+  const allDates = monthWorkDates.value
+  const si = allDates.indexOf(dragStartIso.value)
+  const ei = allDates.indexOf(iso)
+  if (si === -1 || ei === -1) return
+  const from = Math.min(si, ei)
+  const to   = Math.max(si, ei)
+  dragIsos.value = new Set(allDates.slice(from, to + 1))
 }
 
 function onCellClick(fullName, iso) {
@@ -1590,9 +1599,10 @@ async function endDrag() {
   const code     = quickMode.value.code
   const isos     = [...dragIsos.value]
   const fullName = dragFullName.value
-  isDragging.value  = false
+  isDragging.value   = false
   dragFullName.value = null
-  dragIsos.value    = new Set()
+  dragStartIso.value = null
+  dragIsos.value     = new Set()
   // Un seul cell → le click event s'en charge
   if (!code || !fullName || isos.length <= 1) return
   for (const iso of isos) await quickAssignCell(fullName, iso)
@@ -1737,13 +1747,14 @@ async function applyPresetToSelected(code) {
 }
 
 /* ══ Peinture de créneaux (vue semaine) ══ */
-const paintCode      = ref(null)   // code activité, 'erase', ou null
-const isPainting     = ref(false)
-const paintPersonId  = ref(null)
-const paintSlotStart = ref(0)
-const paintSlotEnd   = ref(0)
-const paintBuffer    = ref({})     // { idPersonne: activites[] } — buffer pendant le drag
-const paintSaving    = ref(new Set())
+const paintCode             = ref(null)   // code activité, 'erase', ou null
+const isPainting            = ref(false)
+const paintPersonId         = ref(null)
+const paintSlotStart        = ref(0)
+const paintSlotEnd          = ref(0)
+const paintBuffer           = ref({})     // { idPersonne: activites[] } — buffer pendant le drag
+const paintOriginalActivites = ref([])    // snapshot des activités au mousedown — pour drag bidirectionnel
+const paintSaving           = ref(new Set())
 
 const PAINT_GROUPS = [
   { label: 'Matin',   codes: ['0', '9', '12', '20', '28'] },
@@ -1797,10 +1808,12 @@ const paintInfo = computed(() => {
   return { name, startTime, endTime, durStr, actLabel }
 })
 
-/** Met à jour le buffer de slots entre start et end */
+/** Met à jour le buffer de slots entre start et end.
+ *  Repart toujours des activités d'origine (snapshot au mousedown)
+ *  pour que le drag soit bidirectionnel : reculer réduit la sélection. */
 function applyPaintBuffer() {
   const id  = paintPersonId.value
-  const buf = [...(paintBuffer.value[id] || new Array(45).fill(''))]
+  const buf = [...paintOriginalActivites.value]   // toujours depuis l'original, jamais cumulatif
   const s   = Math.min(paintSlotStart.value, paintSlotEnd.value)
   const e   = Math.max(paintSlotStart.value, paintSlotEnd.value)
   for (let i = s; i <= e; i++) {
@@ -1811,12 +1824,13 @@ function applyPaintBuffer() {
 
 function onSlotMouseDown(event, r, slot) {
   if (!paintCode.value) return
-  isPainting.value     = true
-  paintPersonId.value  = r.idPersonne
-  paintSlotStart.value = slot
-  paintSlotEnd.value   = slot
-  // Initialise le buffer depuis les activités actuelles
-  paintBuffer.value = { ...paintBuffer.value, [r.idPersonne]: [...(r.activites || new Array(45).fill(''))] }
+  isPainting.value            = true
+  paintPersonId.value         = r.idPersonne
+  paintSlotStart.value        = slot
+  paintSlotEnd.value          = slot
+  // Snapshot des activités actuelles — sert de base pour chaque recalcul du buffer
+  paintOriginalActivites.value = [...(r.activites || new Array(45).fill(''))]
+  paintBuffer.value = { ...paintBuffer.value, [r.idPersonne]: [...paintOriginalActivites.value] }
   applyPaintBuffer()
 }
 
