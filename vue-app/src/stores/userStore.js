@@ -34,8 +34,9 @@ export const useUserStore = defineStore('user', () => {
       prenom.value  = d.prenom || ''
 
       // Vérifie si la date de départ est passée (hier ou avant)
+      // Les admins ont toujours accès, quelle que soit leur date de départ
       isDeparted.value = false
-      if (d.depart) {
+      if (!d.isAdmin && d.depart) {
         const parts = d.depart.trim().split(' ')
         if (parts.length >= 3) {
           const depart = new Date(+parts[2], +parts[1] - 1, +parts[0])

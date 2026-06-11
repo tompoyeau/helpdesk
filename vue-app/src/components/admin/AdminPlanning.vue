@@ -2585,7 +2585,11 @@ const monthMatrix = computed(() => {
         m[fullName][iso] = { inactive: true }
         continue
       }
-      const r = dayInfo.ressources?.find(r2 => `${r2.nom} ${r2.prenom}` === fullName)
+      const personId = person.id || person.uid || ''
+      const r = dayInfo.ressources?.find(r2 =>
+        (personId && r2.idPersonne === personId) ||
+        `${r2.nom} ${r2.prenom}`.toLowerCase() === fullName.toLowerCase()
+      )
       if (!r || !r.activites?.some(a => a && a !== '')) {
         m[fullName][iso] = { empty: true }
         continue

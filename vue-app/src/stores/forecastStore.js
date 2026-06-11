@@ -1216,14 +1216,23 @@ export const useForecastStore = defineStore('forecast', () => {
           if (!overwrite && existing && (existing.activites || []).some(a => a && a !== '')) return false
           return true
         })
-        if (!anyChanged && snap.exists()) { skipped++; continue }
-
         // Conserver l'ETP Excel et les horaires fixes (MACA/ALRE) dans le document
         const fcDay = forecast.value[iso]
         const etp   = fcDay?.etp   ?? 0
         const fixed = fcDay?.fixed ?? {}
+        const matin = fcDay?.matin ?? null
+        const midi  = fcDay?.midi  ?? null
+        const aprem = fcDay?.aprem ?? null
+        const soir  = fcDay?.soir  ?? null
 
-        await setDoc(doc(db, collection, dayId), { ressources, etp, fixed })
+        if (!anyChanged && snap.exists()) {
+          // Jour déjà rempli : mettre à jour ETP + fixes sans toucher aux ressources
+          await setDoc(doc(db, collection, dayId), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
+          skipped++
+          continue
+        }
+
+        await setDoc(doc(db, collection, dayId), { ressources, etp, fixed, matin, midi, aprem, soir })
         writtenIds.push(dayId)
         done++
 
