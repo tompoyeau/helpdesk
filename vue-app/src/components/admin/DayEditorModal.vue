@@ -591,7 +591,7 @@ const CHIP_GROUPS = [
   { label: 'Midi',  codes: ['1', '10', '13', '21'] },
   { label: 'Aprem', codes: ['15', '16', '17', '22', '27'] },
   { label: 'Soir',  codes: ['2', '11', '14', '23', '29'] },
-  { label: 'Autre', codes: ['30', '6', '8', '5', '7', '31', '24', '26'] },
+  { label: 'Autre', codes: ['30', '6', '8', '5', '7', '31', '24', '26', '32'] },
 ]
 
 /* ── Presets créneaux (importés depuis adminStore) ── */

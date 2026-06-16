@@ -27,6 +27,7 @@ export const QUICK_PRESETS = {
   '15': S_APREM,'16': S_APREM,'22': S_APREM, '17': S_APREM,'27': S_APREM,
   '2': S_SOIR,  '11': S_SOIR, '23': S_SOIR,  '14': S_SOIR, '29': S_SOIR,
   '26': S_PILOTEBO,
+  '32': S_PILOTEBO,
   '30': S_FULL_DAY,  // CP
   '6':  S_FULL_DAY,  // Indisponible
   '8':  S_FULL_DAY,  // Récup

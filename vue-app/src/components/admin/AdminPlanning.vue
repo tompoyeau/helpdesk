@@ -1546,7 +1546,7 @@ const QUICK_CHIP_GROUPS = [
   { label: 'Midi',    codes: ['1', '10', '13', '21'] },
   { label: 'Aprem',   codes: ['15', '16', '17', '22', '27'] },
   { label: 'Soir',    codes: ['2', '11', '14', '23', '29'] },
-  { label: 'Pilote',  codes: ['26'] },
+  { label: 'Pilote',  codes: ['26', '32'] },
   { label: 'Absence', codes: ['30', '6', '8'] },
 ]
 
@@ -1761,7 +1761,7 @@ const PAINT_GROUPS = [
   { label: 'Midi',    codes: ['1', '10', '13', '21'] },
   { label: 'Aprem',   codes: ['15', '16', '17', '22', '27'] },
   { label: 'Soir',    codes: ['2', '11', '14', '23', '29'] },
-  { label: 'Pilote',  codes: ['24', '26'] },
+  { label: 'Pilote',  codes: ['24', '26', '32'] },
   { label: 'Absence', codes: ['30', '6', '8'] },
   { label: 'Autre',   codes: ['5', '7', '31'] },
 ]

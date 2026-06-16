@@ -62,6 +62,7 @@ export const CAT_MAP = {
   'Formation':        { horaire: 'aprem', mode: 'site',      capped: false },
   'BO':               { horaire: null,    mode: 'bo',        capped: false },
   'PiloteBO':         { horaire: null,    mode: 'bo',        capped: false },
+  'BOTLT':            { horaire: null,    mode: 'tlt',       capped: false },
   'Pilote':           { horaire: null,    mode: 'autre',     capped: false },
   'Astreinte':        { horaire: null,    mode: 'autre',     capped: false },
   'RH':               { horaire: null,    mode: 'autre',     capped: false },
