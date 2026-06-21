@@ -10,6 +10,7 @@ import {
   sendPasswordResetEmail,
 } from 'firebase/auth'
 import { TIME_SLOTS } from '@/stores/dataStore'
+import { logPlanningWrite } from '@/services/planningLogService'
 
 export { TIME_SLOTS }
 
@@ -159,11 +160,16 @@ export const useAdminStore = defineStore('admin', () => {
   // Supprime tous les documents d'une liste de dates ISO (yyyy-mm-dd) — test uniquement
   async function clearMonthPlanning(isoDates) {
     const batch = writeBatch(db)
+    const col   = collectionName.value
     for (const iso of isoDates) {
       const [y, m, d] = iso.split('-').map(Number)
-      batch.delete(doc(db, collectionName.value, dateToId(new Date(y, m - 1, d))))
+      batch.delete(doc(db, col, dateToId(new Date(y, m - 1, d))))
     }
     await batch.commit()
+    for (const iso of isoDates) {
+      const [y, m, d] = iso.split('-').map(Number)
+      logPlanningWrite({ action: 'clear_month', col, dayId: dateToId(new Date(y, m - 1, d)) })
+    }
   }
 
   /**
@@ -200,11 +206,15 @@ export const useAdminStore = defineStore('admin', () => {
     const toCopy = sourceDocs.filter(s => s.exists && (mode === 'overwrite' || !prodExisting.has(s.id)))
     const BATCH_SIZE = 400
     for (let i = 0; i < toCopy.length; i += BATCH_SIZE) {
+      const slice = toCopy.slice(i, i + BATCH_SIZE)
       const batch = writeBatch(db)
-      for (const { id, data } of toCopy.slice(i, i + BATCH_SIZE)) {
+      for (const { id, data } of slice) {
         batch.set(doc(db, 'plannings', id), data, { merge: true })
       }
       await batch.commit()
+      for (const { id, data } of slice) {
+        logPlanningWrite({ action: 'publish_month', col: 'plannings', dayId: id, after: data })
+      }
     }
 
     return toCopy.length

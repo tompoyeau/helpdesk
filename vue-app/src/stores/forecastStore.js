@@ -5,6 +5,7 @@ import { db } from '@/firebase/config'
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
 import { useAdminStore } from '@/stores/adminStore'
 import { isFerie } from '@/stores/statsStore'
+import { logPlanningWrite, extractEtpFields } from '@/services/planningLogService'
 
 /* ============================================================
    CONSTANTES
@@ -1236,6 +1237,14 @@ export const useForecastStore = defineStore('forecast', () => {
         writtenIds.push(dayId)
         done++
 
+        logPlanningWrite({
+          action: 'apply_forecast',
+          col:    collection,
+          dayId,
+          before: backup[dayId],
+          after:  { etp, fixed, matin, midi, aprem, soir },
+        })
+
         // Collecte les notifications (prod uniquement, dans les 15 jours)
         if (collection === 'plannings') {
           for (const p of activePeople) {
@@ -1280,6 +1289,13 @@ export const useForecastStore = defineStore('forecast', () => {
         } else {
           await deleteDoc(doc(db, coll, dayId))
         }
+        logPlanningWrite({
+          action: 'undo_forecast',
+          col:    coll,
+          dayId,
+          before: null,
+          after:  previous ?? null,
+        })
       } catch (e) {
         console.error(`Erreur annulation ${dayId}:`, e)
       }

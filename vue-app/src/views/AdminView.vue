@@ -62,6 +62,11 @@
             <AdminStats />
           </div>
 
+          <!-- Onglet Logs -->
+          <div v-else-if="tab === 'logs'">
+            <AdminLogs />
+          </div>
+
         </div>
       </div>
     </template>
@@ -104,12 +109,13 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
-import { Shield, ShieldOff, Users, CalendarDays, TrendingUp, BarChart2 } from 'lucide-vue-next'
+import { Shield, ShieldOff, Users, CalendarDays, TrendingUp, BarChart2, ScrollText } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
 import AdminCollaborateurs from '@/components/admin/AdminCollaborateurs.vue'
 import AdminPlanning       from '@/components/admin/AdminPlanning.vue'
 import AdminForecast       from '@/components/admin/AdminForecast.vue'
 import AdminStats          from '@/components/admin/AdminStats.vue'
+import AdminLogs           from '@/components/admin/AdminLogs.vue'
 
 const userStore = useUserStore()
 
@@ -119,6 +125,7 @@ const tabs = [
   { key: 'planning',  label: 'Planning',       icon: CalendarDays },
   { key: 'forecast',  label: 'Forecast',       icon: TrendingUp,  mobileHidden: true },
   { key: 'stats',     label: 'Répartition',    icon: BarChart2,   mobileHidden: true },
+  { key: 'logs',      label: 'Logs',           icon: ScrollText,  mobileHidden: true },
 ]
 
 // Si on est sur mobile et que l'onglet actif est masqué, revenir à collab
