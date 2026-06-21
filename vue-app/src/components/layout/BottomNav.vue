@@ -18,18 +18,9 @@
       :class="{ active: ui.leftDrawerOpen }"
       @click="ui.leftDrawerOpen = !ui.leftDrawerOpen"
     >
-      <Users :size="20" />
-      <span>Collabs</span>
+      <Search :size="20" />
+      <span>Rechercher</span>
     </button>
-    <RouterLink
-      v-if="userStore.isAdmin"
-      to="/admin"
-      class="bottom-nav-item"
-      :class="{ active: route.path === '/admin' }"
-    >
-      <Shield :size="20" />
-      <span>Admin</span>
-    </RouterLink>
   </nav>
   </Teleport>
 </template>
@@ -37,12 +28,10 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
-import { useUserStore } from '@/stores/userStore'
-import { CalendarDays, LayoutDashboard, Users, Shield } from 'lucide-vue-next'
+import { CalendarDays, LayoutDashboard, Search } from 'lucide-vue-next'
 
-const route     = useRoute()
-const ui        = useUiStore()
-const userStore = useUserStore()
+const route = useRoute()
+const ui    = useUiStore()
 </script>
 
 <style scoped>

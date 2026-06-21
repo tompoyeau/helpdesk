@@ -109,6 +109,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Shield, ShieldOff, Users, CalendarDays, TrendingUp, BarChart2, ScrollText } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/userStore'
 import AdminCollaborateurs from '@/components/admin/AdminCollaborateurs.vue'
@@ -128,11 +129,11 @@ const tabs = [
   { key: 'logs',      label: 'Logs',           icon: ScrollText,  mobileHidden: true },
 ]
 
-// Si on est sur mobile et que l'onglet actif est masqué, revenir à collab
+const router = useRouter()
+
 onMounted(() => {
-  const isMobile = window.matchMedia('(max-width: 1024px)').matches
-  if (isMobile && tabs.find(t => t.key === tab.value)?.mobileHidden) {
-    tab.value = 'collab'
+  if (window.matchMedia('(max-width: 1024px)').matches) {
+    router.replace('/planning')
   }
 })
 
