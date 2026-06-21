@@ -142,8 +142,20 @@ export const useAdminStore = defineStore('admin', () => {
   async function saveDayPlanning(date, ressources) {
     saving.value = true
     error.value  = null
+    const col   = collectionName.value
+    const dayId = dateToId(date)
     try {
-      await setDoc(doc(db, collectionName.value, dateToId(date)), { ressources }, { merge: true })
+      const prevSnap     = await getDoc(doc(db, col, dayId))
+      const prevRessources = prevSnap.exists() ? (prevSnap.data().ressources || []) : []
+      await setDoc(doc(db, col, dayId), { ressources }, { merge: true })
+      logPlanningWrite({
+        action:  'save_day',
+        col,
+        dayId,
+        before:  { ressources: prevRessources },
+        after:   { ressources },
+        keepRaw: true,
+      })
     } catch (e) {
       error.value = e.message
       throw e
@@ -154,7 +166,25 @@ export const useAdminStore = defineStore('admin', () => {
 
   // Sauvegarde ETP, shifts fixes et répartition (sans toucher aux ressources)
   async function saveEtpAndFixed(date, { etp, fixed, matin = null, midi = null, aprem = null, soir = null }) {
-    await setDoc(doc(db, collectionName.value, dateToId(date)), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
+    const col      = collectionName.value
+    const dayId    = dateToId(date)
+    const prevSnap = await getDoc(doc(db, col, dayId))
+    const prevData = prevSnap.exists() ? prevSnap.data() : {}
+    await setDoc(doc(db, col, dayId), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
+    logPlanningWrite({
+      action: 'save_etp',
+      col,
+      dayId,
+      before: {
+        etp:   prevData.etp   ?? null,
+        fixed: prevData.fixed ?? null,
+        matin: prevData.matin ?? null,
+        midi:  prevData.midi  ?? null,
+        aprem: prevData.aprem ?? null,
+        soir:  prevData.soir  ?? null,
+      },
+      after: { etp, fixed, matin, midi, aprem, soir },
+    })
   }
 
   // Supprime tous les documents d'une liste de dates ISO (yyyy-mm-dd) — test uniquement

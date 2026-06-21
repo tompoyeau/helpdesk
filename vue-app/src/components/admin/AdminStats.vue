@@ -57,8 +57,14 @@
       </span>
     </div>
 
-    <!-- Table -->
-    <div class="as-scroll">
+    <!-- Sous-onglets -->
+    <div class="as-subtabs">
+      <button :class="['as-subtab', { active: view === 'tableau' }]" @click="view = 'tableau'">Tableau</button>
+      <button :class="['as-subtab', { active: view === 'frise' }]" @click="view = 'frise'">Frise</button>
+    </div>
+
+    <!-- Vue Tableau -->
+    <div v-if="view === 'tableau'" class="as-scroll">
       <table class="as-table">
         <colgroup>
           <col style="min-width:160px;width:160px">
@@ -124,6 +130,54 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Vue Frise -->
+    <div v-if="view === 'frise'" class="as-frise-view">
+      <div v-for="row in sortedRows" :key="row.name" class="as-frise-line">
+        <div class="as-frise-person">
+          <span class="as-frise-name">{{ row.name }}</span>
+          <span class="as-frise-days">{{ row.workDays }}j</span>
+        </div>
+        <div class="as-frise-body">
+          <div class="as-frise-track">
+            <div v-for="seg in friseSegs(row)" :key="seg.key"
+              class="as-frise-seg"
+              :style="{ flex: seg.pct, background: seg.color }"
+              :title="`${seg.label} : ${seg.pct}% · ${seg.days}j`"
+            ></div>
+          </div>
+          <div class="as-frise-sublabels">
+            <span v-for="seg in friseSegs(row)" :key="seg.key"
+              class="as-frise-sublbl"
+              :style="{ flex: seg.pct, color: `color-mix(in srgb, ${seg.color} 80%, var(--text))` }"
+            >{{ seg.pct >= 10 ? `${seg.label} · ${seg.pct}% · ${seg.days}j` : seg.pct >= 5 ? `${seg.pct}%` : '' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ligne moyenne -->
+      <div v-if="team" class="as-frise-line as-frise-avg-line">
+        <div class="as-frise-person">
+          <span class="as-frise-name" style="font-style:italic;color:var(--text-muted)">Moy. équipe</span>
+          <span class="as-frise-days">{{ team.avgWorkDays }}j</span>
+        </div>
+        <div class="as-frise-body">
+          <div class="as-frise-track">
+            <div v-for="seg in friseSegs(team)" :key="seg.key"
+              class="as-frise-seg"
+              :style="{ flex: seg.pct, background: seg.color, opacity: 0.6 }"
+              :title="`${seg.label} : ${seg.pct}%`"
+            ></div>
+          </div>
+          <div class="as-frise-sublabels">
+            <span v-for="seg in friseSegs(team)" :key="seg.key"
+              class="as-frise-sublbl"
+              :style="{ flex: seg.pct, color: `color-mix(in srgb, ${seg.color} 80%, var(--text))` }"
+            >{{ seg.pct >= 10 ? `${seg.label} · ${seg.pct}% · ${seg.days}j` : seg.pct >= 5 ? `${seg.pct}%` : '' }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -246,6 +300,56 @@
 .as-pct       { font-size: 0.6875rem; font-weight: 700; min-width: 30px; white-space: nowrap; }
 .as-abs       { font-size: 0.5625rem; color: var(--text-muted); white-space: nowrap; }
 .as-abs-only  { font-size: 0.6875rem; font-weight: 700; white-space: nowrap; }
+
+/* ── Sous-onglets ── */
+.as-subtabs {
+  display: flex; gap: 4px; margin-bottom: 12px;
+}
+.as-subtab {
+  padding: 5px 16px; border-radius: 7px; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s;
+}
+.as-subtab:hover:not(.active) { color: var(--text); background: var(--bg-hover); }
+.as-subtab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── Vue Frise ── */
+.as-frise-view {
+  border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden;
+}
+.as-frise-line {
+  display: flex; align-items: center; gap: 14px;
+  padding: 5px 14px; border-bottom: 1px solid var(--border);
+}
+.as-frise-line:last-child { border-bottom: none; }
+.as-frise-line:hover { background: var(--bg-hover); }
+.as-frise-avg-line {
+  border-top: 2px solid var(--border);
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+}
+
+.as-frise-person {
+  display: flex; flex-direction: column; gap: 1px;
+  min-width: 150px; width: 150px; flex-shrink: 0;
+}
+.as-frise-name  { font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-frise-days  { font-size: 0.6rem; color: var(--text-muted); }
+
+.as-frise-body  { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.as-frise-track {
+  display: flex; height: 14px; border-radius: 8px; overflow: hidden;
+  gap: 2px; background: var(--border);
+}
+.as-frise-seg   { min-width: 0; transition: flex 0.3s; }
+
+.as-frise-sublabels {
+  display: flex; gap: 2px;
+}
+.as-frise-sublbl {
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em;
+  padding: 0 2px; line-height: 1; transition: flex 0.3s;
+}
 </style>
 
 <script setup>
@@ -368,6 +472,20 @@ const sortedRows = computed(() => {
     return a.name.localeCompare(b.name, 'fr')
   })
 })
+
+/* ─── Frise ────────────────────────────────────────────────── */
+const view = ref('tableau')
+
+function friseSegs(row) {
+  const segs = cols.value
+    .filter(c => c.getPct !== null && c.getPct(row) > 0)
+    .map(c => ({ key: c.key, rawPct: c.getPct(row), color: c.color, label: c.label, days: c.getDays(row) }))
+  const total = segs.reduce((s, seg) => s + seg.rawPct, 0)
+  if (total === 0) return []
+  return segs.map(seg => ({ ...seg, pct: Math.round((seg.rawPct / total) * 100) }))
+}
+
+function friseRemainder() { return 0 }
 
 /* ─── Helpers affichage ────────────────────────────────────── */
 function colTitle(row, col) {

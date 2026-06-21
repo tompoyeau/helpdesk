@@ -30,7 +30,11 @@ export function extractEtpFields(data) {
  * dayId  : "DDMMYYYY"
  * before/after : données brutes du doc Firestore (on extrait etp/fixed ici)
  */
-export function logPlanningWrite({ action, col, dayId, before = null, after = null, meta = {} }) {
+/**
+ * keepRaw=true : stocke before/after tels quels (pour les ressources)
+ * keepRaw=false (défaut) : extrait seulement les champs ETP/fixed
+ */
+export function logPlanningWrite({ action, col, dayId, before = null, after = null, meta = {}, keepRaw = false }) {
   try {
     const userStore  = useUserStore()
     const userName   = `${userStore.nom} ${userStore.prenom}`.trim() || auth.currentUser?.email || ''
@@ -45,8 +49,8 @@ export function logPlanningWrite({ action, col, dayId, before = null, after = nu
       col,
       dayId,
       isoDate,
-      before:   extractEtpFields(before),
-      after:    extractEtpFields(after),
+      before:   keepRaw ? before : extractEtpFields(before),
+      after:    keepRaw ? after  : extractEtpFields(after),
       ...meta,
     }).catch(() => {})
   } catch { /* non-fatal */ }
