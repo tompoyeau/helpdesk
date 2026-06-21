@@ -202,7 +202,7 @@ export const useAdminStore = defineStore('admin', () => {
     for (let i = 0; i < toCopy.length; i += BATCH_SIZE) {
       const batch = writeBatch(db)
       for (const { id, data } of toCopy.slice(i, i + BATCH_SIZE)) {
-        batch.set(doc(db, 'plannings', id), data)
+        batch.set(doc(db, 'plannings', id), data, { merge: true })
       }
       await batch.commit()
     }
