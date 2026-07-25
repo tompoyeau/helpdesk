@@ -183,6 +183,12 @@ export const useDataStore = defineStore('data', () => {
   // Abonnements Firestore temps-réel
   let _unsubPlanning  = null
   let _unsubPersonnes = null
+  let _unsubEtp       = null
+
+  // Cache pour fusionner plannings (ressources) + planning_etp (etp/fixed/Covéa),
+  // stockés dans deux collections distinctes. On re-traite dès que l'un des deux change.
+  let _lastPlanningSnap = null
+  let _etpByDay         = {}   // { 'DDMMYYYY': { etp, fixed, matin, midi, aprem, soir } }
 
   // Debounce pour computeFiltered (évite les recalculs en rafale lors d'un forecast)
   let _computeTimer = null
@@ -237,10 +243,25 @@ export const useDataStore = defineStore('data', () => {
 
     const newFixedNames = new Set()
 
+    // Applique l'Équipe Covéa (MACA/ALRE) d'un jour depuis planning_etp
+    const applyFixed = (dayId, date) => {
+      const fixed = _etpByDay[dayId]?.fixed || {}
+      for (const [name, fam] of Object.entries(fixed)) {
+        const entries = FIXED_FAM_ENTRIES[fam]
+        if (!entries) continue
+        newFixedNames.add(name)
+        if (!newPlanning[name]) newPlanning[name] = {}
+        newPlanning[name][date] = entries
+      }
+    }
+
+    const seenDays = new Set()
+
     snapshot.forEach(docSnap => {
       const day  = docSnap.data()
       const date = parseDateFromId(docSnap.id)
       if (!date) return
+      seenDays.add(docSnap.id)
 
       // Ressources régulières
       if (Array.isArray(day.ressources)) {
@@ -260,16 +281,17 @@ export const useDataStore = defineStore('data', () => {
         })
       }
 
-      // Personnes fixes (MACA, ALRE — Équipe Covéa)
-      const fixed = day.fixed || {}
-      for (const [name, fam] of Object.entries(fixed)) {
-        const entries = FIXED_FAM_ENTRIES[fam]
-        if (!entries) continue
-        newFixedNames.add(name)
-        if (!newPlanning[name]) newPlanning[name] = {}
-        newPlanning[name][date] = entries
-      }
+      // Personnes fixes (MACA, ALRE — Équipe Covéa) : depuis la collection dédiée planning_etp
+      applyFixed(docSnap.id, date)
     })
+
+    // Jours présents uniquement dans planning_etp (ETP importé sans ressources encore
+    // générées) — sinon l'Équipe Covéa n'apparaîtrait pas tant qu'aucun doc plannings n'existe
+    for (const dayId of Object.keys(_etpByDay)) {
+      if (seenDays.has(dayId)) continue
+      const date = parseDateFromId(dayId)
+      if (date) applyFixed(dayId, date)
+    }
 
     _fixedPersonNames.value = newFixedNames
     _nameToPersonId.value   = newNameToPersonId
@@ -303,7 +325,10 @@ export const useDataStore = defineStore('data', () => {
   function cleanup() {
     if (_unsubPlanning)  { _unsubPlanning();  _unsubPlanning  = null }
     if (_unsubPersonnes) { _unsubPersonnes(); _unsubPersonnes = null }
+    if (_unsubEtp)       { _unsubEtp();       _unsubEtp       = null }
     if (_computeTimer)   { clearTimeout(_computeTimer); _computeTimer = null }
+    _lastPlanningSnap = null
+    _etpByDay         = {}
   }
 
   async function init() {
@@ -328,6 +353,7 @@ export const useDataStore = defineStore('data', () => {
         _unsubPlanning = onSnapshot(
           collection(db, 'plannings'),
           snapshot => {
+            _lastPlanningSnap = snapshot
             _processPlanning(snapshot)
             if (first) { first = false; resolve() }
             else _scheduleComputeFiltered()
@@ -335,6 +361,26 @@ export const useDataStore = defineStore('data', () => {
           err => {
             error.value = err.message
             if (import.meta.env.DEV) console.error('❌ plannings :', err)
+            if (first) { first = false; resolve() }
+          }
+        )
+      }),
+      // ── planning_etp (ETP + Équipe Covéa, collection dédiée) ──
+      new Promise(resolve => {
+        let first = true
+        _unsubEtp = onSnapshot(
+          collection(db, 'planning_etp'),
+          snapshot => {
+            const map = {}
+            snapshot.forEach(d => { map[d.id] = d.data() })
+            _etpByDay = map
+            // Re-fusionner avec les ressources déjà chargées
+            if (_lastPlanningSnap) _processPlanning(_lastPlanningSnap)
+            if (first) { first = false; resolve() }
+            else _scheduleComputeFiltered()
+          },
+          err => {
+            if (import.meta.env.DEV) console.warn('⚠️ planning_etp :', err)
             if (first) { first = false; resolve() }
           }
         )

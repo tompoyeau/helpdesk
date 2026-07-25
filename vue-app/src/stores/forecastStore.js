@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { read, utils } from 'xlsx'
 import { db } from '@/firebase/config'
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
-import { useAdminStore } from '@/stores/adminStore'
+import { useAdminStore, ETP_COLLECTION } from '@/stores/adminStore'
 import { isFerie } from '@/stores/statsStore'
 import { logPlanningWrite, extractEtpFields } from '@/services/planningLogService'
 
@@ -124,6 +124,12 @@ export const SHIFT_COLORS = {
 }
 
 const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+
+// Collection où stocker les champs ETP/Covéa selon l'environnement :
+// prod ('plannings') → collection dédiée ; test → le doc jour lui-même (legacy).
+function etpColFor(col) {
+  return col === 'plannings' ? ETP_COLLECTION : col
+}
 
 
 /* ============================================================
@@ -1168,14 +1174,21 @@ export const useForecastStore = defineStore('forecast', () => {
       if (onProgress) onProgress(processed, dates.length)
 
       try {
-        const date  = new Date(iso + 'T12:00:00')
-        const dayId = admin.dateToId(date)
+        const date   = new Date(iso + 'T12:00:00')
+        const dayId  = admin.dateToId(date)
+        const etpCol = etpColFor(collection)
 
-        // Toujours charger le doc existant : sert au backup undo et à la préservation des données
-        const snap = await getDoc(doc(db, collection, dayId))
+        // Toujours charger les docs existants : sert au backup undo et à la préservation des données
+        const [snap, etpSnap] = await Promise.all([
+          getDoc(doc(db, collection, dayId)),
+          etpCol === collection ? Promise.resolve(null) : getDoc(doc(db, etpCol, dayId)),
+        ])
 
-        // Sauvegarde pour restauration éventuelle
-        backup[dayId] = snap.exists() ? snap.data() : null
+        // Sauvegarde pour restauration éventuelle (les deux docs en prod)
+        backup[dayId] = {
+          main: snap.exists() ? snap.data() : null,
+          etp:  etpCol === collection ? null : (etpSnap?.exists() ? etpSnap.data() : null),
+        }
 
         const activePeople = persons
           .filter(p => admin.isActiveOn(p, date))
@@ -1217,23 +1230,32 @@ export const useForecastStore = defineStore('forecast', () => {
           if (!overwrite && existing && (existing.activites || []).some(a => a && a !== '')) return false
           return true
         })
-        // Conserver l'ETP Excel et les horaires fixes (MACA/ALRE) dans le document
+        // Conserver l'ETP Excel et les horaires fixes (MACA/ALRE) — écrits dans la collection dédiée
         const fcDay = forecast.value[iso]
-        const etp   = fcDay?.etp   ?? 0
-        const fixed = fcDay?.fixed ?? {}
-        const matin = fcDay?.matin ?? null
-        const midi  = fcDay?.midi  ?? null
-        const aprem = fcDay?.aprem ?? null
-        const soir  = fcDay?.soir  ?? null
+        const etpData = {
+          etp:   fcDay?.etp   ?? 0,
+          fixed: fcDay?.fixed ?? {},
+          matin: fcDay?.matin ?? null,
+          midi:  fcDay?.midi  ?? null,
+          aprem: fcDay?.aprem ?? null,
+          soir:  fcDay?.soir  ?? null,
+        }
 
         if (!anyChanged && snap.exists()) {
           // Jour déjà rempli : mettre à jour ETP + fixes sans toucher aux ressources
-          await setDoc(doc(db, collection, dayId), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
+          await setDoc(doc(db, etpCol, dayId), etpData, { merge: true })
           skipped++
           continue
         }
 
-        await setDoc(doc(db, collection, dayId), { ressources, etp, fixed, matin, midi, aprem, soir })
+        if (etpCol === collection) {
+          // test : ressources + ETP/Covéa dans le même doc jour (legacy)
+          await setDoc(doc(db, collection, dayId), { ressources, ...etpData })
+        } else {
+          // prod : ressources et ETP/Covéa dans des documents séparés
+          await setDoc(doc(db, collection, dayId), { ressources })
+          await setDoc(doc(db, etpCol, dayId), etpData)
+        }
         writtenIds.push(dayId)
         done++
 
@@ -1241,8 +1263,8 @@ export const useForecastStore = defineStore('forecast', () => {
           action: 'apply_forecast',
           col:    collection,
           dayId,
-          before: backup[dayId],
-          after:  { etp, fixed, matin, midi, aprem, soir },
+          before: etpCol === collection ? backup[dayId].main : backup[dayId].etp,
+          after:  etpData,
         })
 
         // Collecte les notifications (prod uniquement, dans les 15 jours)
@@ -1280,21 +1302,34 @@ export const useForecastStore = defineStore('forecast', () => {
     const ids   = [...appliedDayIds.value]
     const backup = appliedBackup.value
     const coll  = appliedCollection.value
+    const etpCol = etpColFor(coll)
     let n = 0
     for (const dayId of ids) {
       try {
-        const previous = backup[dayId]
-        if (previous) {
-          await setDoc(doc(db, coll, dayId), previous)
+        const previous = backup[dayId] || { main: null, etp: null }
+
+        // Restaurer le doc jour (ressources)
+        if (previous.main) {
+          await setDoc(doc(db, coll, dayId), previous.main)
         } else {
           await deleteDoc(doc(db, coll, dayId))
         }
+
+        // Restaurer le doc ETP/Covéa dédié (prod uniquement)
+        if (etpCol !== coll) {
+          if (previous.etp) {
+            await setDoc(doc(db, etpCol, dayId), previous.etp)
+          } else {
+            await deleteDoc(doc(db, etpCol, dayId))
+          }
+        }
+
         logPlanningWrite({
           action: 'undo_forecast',
           col:    coll,
           dayId,
           before: null,
-          after:  previous ?? null,
+          after:  etpCol === coll ? previous.main : previous.etp,
         })
       } catch (e) {
         console.error(`Erreur annulation ${dayId}:`, e)

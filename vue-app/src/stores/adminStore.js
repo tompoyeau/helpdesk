@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { db, auth, authSecondary } from '@/firebase/config'
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, collection,
 } from 'firebase/firestore'
 import {
   createUserWithEmailAndPassword,
@@ -37,6 +37,30 @@ export const QUICK_PRESETS = {
 // Codes d'activité qui comptent dans l'ETP :
 // Matin/Midi/Aprem/Soir (site client), TLT, TLT Agence — tout le reste est exclu
 export const ETP_CODES = new Set(['0', '1', '15', '2', '20', '21', '22', '23', '12', '13', '17', '14'])
+
+// Collection dédiée aux données ETP + Équipe Covéa (etp, fixed, répartition).
+// Isolée de `plannings` pour qu'aucune autre application réécrivant le doc jour
+// ne puisse effacer ces champs. Prod uniquement — le mode test conserve ces
+// champs embarqués dans le doc `plannings_test`.
+export const ETP_COLLECTION = 'planning_etp'
+
+// Où lire/écrire les champs ETP/Covéa selon la collection de travail :
+// prod ('plannings') → collection dédiée ; test → le doc jour lui-même (legacy).
+function etpColFor(col) {
+  return col === 'plannings' ? ETP_COLLECTION : col
+}
+
+const ETP_FIELDS = ['etp', 'fixed', 'matin', 'midi', 'aprem', 'soir']
+
+// Extrait les champs ETP/Covéa d'un doc jour. Retourne null si aucun n'est présent.
+function extractEtpData(data) {
+  if (!data) return null
+  const out = {}
+  for (const k of ETP_FIELDS) {
+    if (k in data && data[k] != null) out[k] = data[k]
+  }
+  return Object.keys(out).length ? out : null
+}
 
 export const useAdminStore = defineStore('admin', () => {
   const saving         = ref(false)
@@ -118,24 +142,38 @@ export const useAdminStore = defineStore('admin', () => {
 
   /* ── Planning ── */
   async function loadDayPlanning(date) {
-    const id   = dateToId(date)
-    const snap = await getDoc(doc(db, collectionName.value, id))
-    if (!snap.exists()) return { id, exists: false, filled: false, ressources: [], etp: null, fixed: {}, filledCount: 0, total: 0 }
+    const id     = dateToId(date)
+    const col    = collectionName.value
+    const etpCol = etpColFor(col)
 
-    const d2         = snap.data()
-    const ressources  = d2.ressources || []
-    const fixedCount  = Object.keys(d2.fixed || {}).length
+    const [snap, etpSnap] = await Promise.all([
+      getDoc(doc(db, col, id)),
+      etpCol === col ? Promise.resolve(null) : getDoc(doc(db, etpCol, id)),
+    ])
+
+    // Champs ETP/Covéa : depuis la collection dédiée en prod, sinon depuis le doc jour
+    const meta = etpCol === col
+      ? (snap.exists() ? snap.data() : {})
+      : (etpSnap?.exists() ? etpSnap.data() : {})
+
+    const etpExists = etpCol === col ? snap.exists() : !!etpSnap?.exists()
+    if (!snap.exists() && !etpExists) {
+      return { id, exists: false, filled: false, ressources: [], etp: null, fixed: {}, filledCount: 0, total: 0 }
+    }
+
+    const ressources  = snap.exists() ? (snap.data().ressources || []) : []
+    const fixedCount  = Object.keys(meta.fixed || {}).length
     const filledCount = ressources.filter(r =>
       (r.activites || []).some(a => a && ETP_CODES.has(String(a)))
     ).length + fixedCount
     return {
       id, exists: true, filledCount, total: ressources.length, ressources,
-      etp:   d2.etp   ?? null,
-      fixed: d2.fixed ?? {},
-      matin: d2.matin ?? null,
-      midi:  d2.midi  ?? null,
-      aprem: d2.aprem ?? null,
-      soir:  d2.soir  ?? null,
+      etp:   meta.etp   ?? null,
+      fixed: meta.fixed ?? {},
+      matin: meta.matin ?? null,
+      midi:  meta.midi  ?? null,
+      aprem: meta.aprem ?? null,
+      soir:  meta.soir  ?? null,
     }
   }
 
@@ -167,10 +205,11 @@ export const useAdminStore = defineStore('admin', () => {
   // Sauvegarde ETP, shifts fixes et répartition (sans toucher aux ressources)
   async function saveEtpAndFixed(date, { etp, fixed, matin = null, midi = null, aprem = null, soir = null }) {
     const col      = collectionName.value
+    const etpCol   = etpColFor(col)
     const dayId    = dateToId(date)
-    const prevSnap = await getDoc(doc(db, col, dayId))
+    const prevSnap = await getDoc(doc(db, etpCol, dayId))
     const prevData = prevSnap.exists() ? prevSnap.data() : {}
-    await setDoc(doc(db, col, dayId), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
+    await setDoc(doc(db, etpCol, dayId), { etp, fixed, matin, midi, aprem, soir }, { merge: true })
     logPlanningWrite({
       action: 'save_etp',
       col,
@@ -232,14 +271,18 @@ export const useAdminStore = defineStore('admin', () => {
       prodExisting = new Set(checks.filter(Boolean))
     }
 
-    // 3. Écrire en batch (max 500 ops par batch Firestore)
+    // 3. Écrire en batch. Les docs source (plannings_test) embarquent ressources + ETP/Covéa ;
+    //    en prod on éclate : ressources → plannings, ETP/Covéa → planning_etp.
+    //    2 ops/jour → BATCH_SIZE 200 pour rester sous la limite de 500 ops/batch Firestore.
     const toCopy = sourceDocs.filter(s => s.exists && (mode === 'overwrite' || !prodExisting.has(s.id)))
-    const BATCH_SIZE = 400
+    const BATCH_SIZE = 200
     for (let i = 0; i < toCopy.length; i += BATCH_SIZE) {
       const slice = toCopy.slice(i, i + BATCH_SIZE)
       const batch = writeBatch(db)
       for (const { id, data } of slice) {
-        batch.set(doc(db, 'plannings', id), data, { merge: true })
+        batch.set(doc(db, 'plannings', id), { ressources: data.ressources || [] }, { merge: true })
+        const etpData = extractEtpData(data)
+        if (etpData) batch.set(doc(db, ETP_COLLECTION, id), etpData, { merge: true })
       }
       await batch.commit()
       for (const { id, data } of slice) {
@@ -278,6 +321,31 @@ export const useAdminStore = defineStore('admin', () => {
     return arr
   }
 
+  /**
+   * Migration one-shot : copie etp/fixed/répartition de tous les docs `plannings`
+   * vers la collection dédiée `planning_etp` (même ID de jour). Non destructif —
+   * les anciens champs restent dans `plannings` mais ne sont plus lus par l'app.
+   * À lancer une seule fois, connecté en admin. Idempotent (merge).
+   */
+  async function migrateEtpToDedicated(onProgress) {
+    const snap = await getDocs(collection(db, 'plannings'))
+    const docs = snap.docs
+    let migrated = 0, skipped = 0
+    let batch = writeBatch(db), ops = 0
+
+    for (const d of docs) {
+      const etpData = extractEtpData(d.data())
+      if (!etpData) { skipped++; continue }
+      batch.set(doc(db, ETP_COLLECTION, d.id), etpData, { merge: true })
+      ops++; migrated++
+      if (ops >= 400) { await batch.commit(); batch = writeBatch(db); ops = 0 }
+      if (onProgress) onProgress(migrated + skipped, docs.length)
+    }
+    if (ops) await batch.commit()
+
+    return { migrated, skipped, total: docs.length }
+  }
+
   /* ── Personnes actives à une date donnée ── */
   function isActiveOn(person, date) {
     const parse = str => {
@@ -300,6 +368,7 @@ export const useAdminStore = defineStore('admin', () => {
     inputToFirestore, firestoreToInput,
     createPersonne, createPersonneWithAuth, updatePersonne, deletePersonne,
     loadDayPlanning, saveDayPlanning, saveEtpAndFixed, clearMonthPlanning, copyMonthToProd,
+    migrateEtpToDedicated,
     parseBlocks, buildActivites, isActiveOn,
   }
 })

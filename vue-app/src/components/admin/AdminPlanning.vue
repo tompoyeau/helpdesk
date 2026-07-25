@@ -89,6 +89,19 @@
           <FlaskConical :size="12" />
           {{ admin.collectionName !== 'plannings' ? 'Base TEST' : 'Base prod' }}
         </button>
+        <button
+          class="btn-etp-import"
+          :disabled="migrating"
+          title="Migration one-shot : copie ETP + Équipe Covéa vers la collection dédiée planning_etp"
+          @click="runEtpMigration"
+        >
+          <div v-if="migrating" class="btn-spinner-sm"></div>
+          <DatabaseZap v-else :size="12" />
+          {{ migrating ? 'Migration…' : 'Migrer ETP' }}
+        </button>
+        <span v-if="migrateMsg" class="etp-import-msg" :class="{ 'etp-import-err': migrateMsg.startsWith('Erreur') }">
+          {{ migrateMsg }}
+        </span>
       </div>
     </div>
 
@@ -1505,7 +1518,7 @@ const monthOffset = ref(0)        // mois relatif au mois courant
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2, ArrowUpFromLine,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2, ArrowUpFromLine, DatabaseZap,
 } from 'lucide-vue-next'
 import { useAdminStore, ETP_CODES, QUICK_PRESETS, TIME_SLOTS } from '@/stores/adminStore'
 import { parseEtpFromExcel } from '@/stores/forecastStore'
@@ -1523,6 +1536,10 @@ const data      = useDataStore()
 const etpFileInput     = ref(null)
 const etpImporting     = ref(false)
 const etpImportMsg     = ref('')   // feedback message
+
+/* ── Migration one-shot ETP/Covéa → collection dédiée planning_etp ── */
+const migrating    = ref(false)
+const migrateMsg   = ref('')
 const confirmClearMonth  = ref(false)
 const clearingMonth      = ref(false)
 const confirmPublishMonth = ref(false)
@@ -1874,6 +1891,24 @@ async function endPaint() {
   }
 }
 
+
+async function runEtpMigration() {
+  if (migrating.value) return
+  if (!confirm('Migrer les données ETP + Équipe Covéa de tous les plannings vers la collection dédiée « planning_etp » ?\n\nOpération non destructive, à lancer une seule fois.')) return
+  migrating.value  = true
+  migrateMsg.value = 'Migration…'
+  try {
+    const res = await admin.migrateEtpToDedicated((done, total) => {
+      migrateMsg.value = `Migration… ${done}/${total}`
+    })
+    migrateMsg.value = `✓ ${res.migrated} jours migrés (${res.skipped} sans ETP)`
+  } catch (err) {
+    migrateMsg.value = `Erreur : ${err.message}`
+  } finally {
+    migrating.value = false
+    setTimeout(() => { migrateMsg.value = '' }, 8000)
+  }
+}
 
 async function onEtpFile(e) {
   const file = e.target.files?.[0]
