@@ -32,12 +32,25 @@
           </button>
         </div>
 
+        <!-- Filtre par équipe (matin/midi/aprem/soir) -->
+        <div v-if="!filterPerson" class="team-filter">
+          <button
+            :class="['tf-btn', { 'tf-active': teamFilter === null }]"
+            @click="teamFilter = null"
+          >Tous</button>
+          <button
+            v-for="t in TEAMS"
+            :key="t.key"
+            :class="['tf-btn', `tf-${t.key}`, { 'tf-active': teamFilter === t.key }]"
+            @click="teamFilter = teamFilter === t.key ? null : t.key"
+          >{{ t.label }}</button>
+        </div>
+
         <!-- Tri alphabétique/horaire (vue semaine uniquement) -->
         <button
           v-if="!filterPerson && viewMode === 'week'"
           class="btn-sort"
           :class="{ 'btn-sort-active': sortByHoraire }"
-          style="margin-left:auto"
           @click="sortByHoraire = !sortByHoraire"
         >
           <ArrowUpDown :size="12" />
@@ -121,6 +134,10 @@
               :is-favorite="favorites.includes(person)"
               @toggle-favorite="toggleFavorite"
               @open-modal="openModal" />
+          </div>
+
+          <div v-if="weekEmpty" class="team-empty">
+            Aucun collaborateur dans l'équipe <strong>{{ teamLabel }}</strong> cette semaine.
           </div>
         </template>
       </div>
@@ -254,6 +271,13 @@
                   </td>
                 </tr>
               </template>
+
+              <!-- État vide (filtre équipe) -->
+              <tr v-if="monthEmpty">
+                <td :colspan="monthWorkDates.length + 1" class="team-empty-cell">
+                  Aucun collaborateur dans l'équipe <strong>{{ teamLabel }}</strong> ce mois-ci.
+                </td>
+              </tr>
 
             </template>
           </tbody>
@@ -426,6 +450,52 @@ function switchToWeek() {
   viewMode.value = 'week'
 }
 
+/* ── Filtre par équipe (famille d'horaire matin/midi/aprem/soir) ── */
+const TEAMS = [
+  { key: 'matin', label: 'Matin' },
+  { key: 'midi',  label: 'Midi'  },
+  { key: 'aprem', label: 'Aprem' },
+  { key: 'soir',  label: 'Soir'  },
+]
+const teamFilter = ref(null)   // null | 'matin' | 'midi' | 'aprem' | 'soir'
+
+// Famille d'horaire d'une catégorie, dérivée du rang HORAIRE_RANK
+// (matin 0-9, midi 10-19, aprem 20-29, soir 30-39 ; BO/Pilote/absences → null)
+function catFamily(cat) {
+  const r = HORAIRE_RANK[cat]
+  if (r === undefined || r >= 40) return null
+  if (r < 10) return 'matin'
+  if (r < 20) return 'midi'
+  if (r < 30) return 'aprem'
+  return 'soir'
+}
+
+// Ensemble des équipes d'une personne sur la période (une personne peut changer
+// d'horaire en cours de semaine → elle apparaît sous chaque équipe qu'elle occupe)
+function personTeams(person, isos) {
+  const fams = new Set()
+  for (const iso of isos) {
+    const entries = data.planning?.[person]?.[iso]
+    if (!entries?.length) continue
+    // Catégorie dominante du jour (même logique que l'affichage des cellules)
+    const dayCounts = {}
+    for (const e of entries) if (e.categorie) dayCounts[e.categorie] = (dayCounts[e.categorie] || 0) + 1
+    const cat = Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
+    const fam = catFamily(cat)
+    if (fam) fams.add(fam)
+  }
+  return fams
+}
+
+function filterByTeam(list, isos) {
+  if (!teamFilter.value) return list
+  return list.filter(p => personTeams(p, isos).has(teamFilter.value))
+}
+
+const weekIsos = computed(() => weekDates.value.map(fmtIso))
+
+const teamLabel = computed(() => TEAMS.find(t => t.key === teamFilter.value)?.label ?? '')
+
 /* ── Tri vue semaine ── */
 const sortByHoraire = ref(false)
 
@@ -449,20 +519,30 @@ function sortedPeople(list) {
 }
 
 const favoritePeople = computed(() => {
+  if (teamFilter.value) return []   // pas de section favoris pendant le filtrage par équipe
   const reg   = activePeople.value.filter(p => favorites.value.includes(p))
   const fixed = [...(data.fixedPersonNames || [])]
     .filter(n => favorites.value.includes(n) && weekDates.value.some(d => data.planning?.[n]?.[formatDate(d)]?.length))
     .sort((a, b) => a.localeCompare(b, 'fr'))
   return sortedPeople([...reg, ...fixed])
 })
-const otherPeople = computed(() => sortedPeople(activePeople.value.filter(p => !favorites.value.includes(p))))
+// Pendant le filtrage : liste à plat (favoris inclus), sinon on exclut les favoris
+const otherPeople = computed(() => {
+  const base = teamFilter.value
+    ? activePeople.value
+    : activePeople.value.filter(p => !favorites.value.includes(p))
+  return sortedPeople(filterByTeam(base, weekIsos.value))
+})
 
-// Personnes fixes NON favorites présentes dans la semaine courante
+// Personnes fixes présentes dans la semaine (favoris inclus si filtrage actif)
 const fixedPeopleWeek = computed(() =>
-  [...(data.fixedPersonNames || [])].filter(name =>
-    !favorites.value.includes(name) &&
-    weekDates.value.some(d => data.planning?.[name]?.[formatDate(d)]?.length)
-  ).sort((a, b) => a.localeCompare(b, 'fr'))
+  filterByTeam(
+    [...(data.fixedPersonNames || [])].filter(name =>
+      (teamFilter.value || !favorites.value.includes(name)) &&
+      weekDates.value.some(d => data.planning?.[name]?.[formatDate(d)]?.length)
+    ).sort((a, b) => a.localeCompare(b, 'fr')),
+    weekIsos.value,
+  )
 )
 
 /* ══════════════════════════════════════════════
@@ -565,21 +645,37 @@ function monthSortedPeople(list) {
 }
 
 const favoritePeopleMonth = computed(() => {
+  if (teamFilter.value) return []   // pas de section favoris pendant le filtrage par équipe
   const reg   = activePeople.value.filter(p => favorites.value.includes(p))
   const fixed = [...(data.fixedPersonNames || [])]
     .filter(n => favorites.value.includes(n) && monthWorkDates.value.some(iso => data.planning?.[n]?.[iso]?.length))
     .sort((a, b) => a.localeCompare(b, 'fr'))
   return monthSortedPeople([...reg, ...fixed])
 })
-const otherPeopleMonth = computed(() => monthSortedPeople(activePeople.value.filter(p => !favorites.value.includes(p))))
+// Pendant le filtrage : liste à plat (favoris inclus), sinon on exclut les favoris
+const otherPeopleMonth = computed(() => {
+  const base = teamFilter.value
+    ? activePeople.value
+    : activePeople.value.filter(p => !favorites.value.includes(p))
+  return monthSortedPeople(filterByTeam(base, monthWorkDates.value))
+})
 
-// Personnes fixes NON favorites présentes dans le mois courant
+// Personnes fixes présentes dans le mois (favoris inclus si filtrage actif)
 const fixedPeopleMonth = computed(() =>
-  [...(data.fixedPersonNames || [])].filter(name =>
-    !favorites.value.includes(name) &&
-    monthWorkDates.value.some(iso => data.planning?.[name]?.[iso]?.length)
-  ).sort((a, b) => a.localeCompare(b, 'fr'))
+  filterByTeam(
+    [...(data.fixedPersonNames || [])].filter(name =>
+      (teamFilter.value || !favorites.value.includes(name)) &&
+      monthWorkDates.value.some(iso => data.planning?.[name]?.[iso]?.length)
+    ).sort((a, b) => a.localeCompare(b, 'fr')),
+    monthWorkDates.value,
+  )
 )
+
+// Aucun résultat après filtrage par équipe (par mode de vue)
+const weekEmpty  = computed(() => !!teamFilter.value &&
+  favoritePeople.value.length + otherPeople.value.length + fixedPeopleWeek.value.length === 0)
+const monthEmpty = computed(() => !!teamFilter.value &&
+  favoritePeopleMonth.value.length + otherPeopleMonth.value.length + fixedPeopleMonth.value.length === 0)
 </script>
 
 <style scoped>
@@ -616,6 +712,43 @@ const fixedPeopleMonth = computed(() =>
 }
 .btn-sort:hover    { background: var(--bg-hover); color: var(--text); }
 .btn-sort-active   { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+
+/* ── Filtre par équipe ── */
+.team-filter {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-left: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 3px; background: var(--bg-surface);
+}
+@media (max-width: 768px) {
+  /* Le filtre passe sur sa propre ligne ; boutons à taille naturelle (aucune
+     pression de taille intrinsèque → pas de collapse Firefox dans la grille). */
+  .planning-nav { flex-wrap: wrap; }
+  .team-filter  { margin-left: 0; }
+}
+.tf-btn {
+  padding: 3px 9px; font-size: 0.75rem; font-weight: 600;
+  border: none; border-radius: 5px; background: transparent;
+  color: var(--text-muted); cursor: pointer; white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.tf-btn:hover { background: var(--bg-hover); color: var(--text); }
+.tf-active            { background: var(--accent); color: #fff; }
+.tf-matin.tf-active   { background: rgba(174, 219, 255, 1); color: #0b3a66; }
+.tf-midi.tf-active    { background: rgba(149, 207, 255, 1); color: #0b3a66; }
+.tf-aprem.tf-active   { background: rgba(89,  180, 254, 1); color: #08243f; }
+.tf-soir.tf-active    { background: rgba(86,  166, 233, 1); color: #08243f; }
+
+/* ── État vide (filtre équipe) ── */
+.team-empty {
+  padding: 24px 16px; text-align: center;
+  font-size: 0.8125rem; color: var(--text-muted);
+}
+.team-empty-cell {
+  padding: 20px 12px !important; text-align: center;
+  font-size: 0.8125rem; color: var(--text-muted);
+  background: var(--bg-card);
+}
 
 /* ══ Vue Mois ══ */
 .pm-scroll {
