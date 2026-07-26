@@ -13,6 +13,15 @@
       <LayoutDashboard :size="20" />
       <span>Tableau de bord</span>
     </RouterLink>
+    <RouterLink
+      v-if="userStore.isAdmin"
+      to="/equite"
+      class="bottom-nav-item"
+      :class="{ active: route.path === '/equite' }"
+    >
+      <Scale :size="20" />
+      <span>Équité</span>
+    </RouterLink>
     <button
       class="bottom-nav-item"
       :class="{ active: ui.leftDrawerOpen }"
@@ -28,10 +37,12 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
-import { CalendarDays, LayoutDashboard, Search } from 'lucide-vue-next'
+import { useUserStore } from '@/stores/userStore'
+import { CalendarDays, LayoutDashboard, Search, Scale } from 'lucide-vue-next'
 
-const route = useRoute()
-const ui    = useUiStore()
+const route     = useRoute()
+const ui        = useUiStore()
+const userStore = useUserStore()
 </script>
 
 <style scoped>

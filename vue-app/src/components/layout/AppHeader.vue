@@ -30,6 +30,10 @@
         <LayoutDashboard :size="13" />
         <span class="hide-xs">Tableau de bord</span>
       </RouterLink>
+      <RouterLink v-if="userStore.isAdmin" to="/equite" class="header-nav-btn" :class="{ active: route.path === '/equite' }">
+        <Scale :size="13" />
+        <span class="hide-xs">Équité</span>
+      </RouterLink>
       <RouterLink v-if="userStore.isAdmin" to="/admin" class="header-nav-btn" :class="{ active: route.path === '/admin' }">
         <Shield :size="13" />
         <span class="hide-xs">Admin</span>
@@ -76,7 +80,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
-import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield, User, UserCircle } from 'lucide-vue-next'
+import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield, Scale, User, UserCircle } from 'lucide-vue-next'
 import DateRangePicker   from '@/components/layout/DateRangePicker.vue'
 import NotificationBell  from '@/components/layout/NotificationBell.vue'
 

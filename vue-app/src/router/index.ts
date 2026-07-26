@@ -4,6 +4,7 @@ import DashboardView from '@/views/DashboardView.vue'
 import PersonView    from '@/views/PersonView.vue'
 import CatView       from '@/views/CatView.vue'
 import AdminView     from '@/views/AdminView.vue'
+import EquiteView    from '@/views/EquiteView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,6 +12,7 @@ const router = createRouter({
     { path: '/',             redirect: '/planning' },
     { path: '/planning',     name: 'planning',  component: PlanningView  },
     { path: '/dashboard',    name: 'dashboard', component: DashboardView },
+    { path: '/equite',       name: 'equite',    component: EquiteView    },
     { path: '/person/:name', name: 'person',    component: PersonView    },
     { path: '/cat/:name',    name: 'cat',       component: CatView       },
     { path: '/admin',        name: 'admin',     component: AdminView     },
