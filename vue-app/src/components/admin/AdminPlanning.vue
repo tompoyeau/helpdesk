@@ -89,19 +89,6 @@
           <FlaskConical :size="12" />
           {{ admin.collectionName !== 'plannings' ? 'Base TEST' : 'Base prod' }}
         </button>
-        <button
-          class="btn-etp-import"
-          :disabled="migrating"
-          title="Migration one-shot : copie ETP + Équipe Covéa vers la collection dédiée planning_etp"
-          @click="runEtpMigration"
-        >
-          <div v-if="migrating" class="btn-spinner-sm"></div>
-          <DatabaseZap v-else :size="12" />
-          {{ migrating ? 'Migration…' : 'Migrer ETP' }}
-        </button>
-        <span v-if="migrateMsg" class="etp-import-msg" :class="{ 'etp-import-err': migrateMsg.startsWith('Erreur') }">
-          {{ migrateMsg }}
-        </span>
       </div>
     </div>
 
@@ -193,12 +180,12 @@
               class="paint-chip"
               :class="{ 'paint-chip-active': paintCode === code }"
               :style="paintCode === code
-                ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: ACTIVITY_MAPPING[code].couleur.replace(/,\s*1\s*\)/, ', 0.15)'), color: ACTIVITY_MAPPING[code].couleur }
+                ? { borderColor: chipColor(code), background: chipColor(code).replace(/,\s*1\s*\)/, ', 0.15)'), color: chipColor(code) }
                 : {}"
               @click="onPaintChipClick(code)"
             >
-              <span class="paint-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
-              {{ ACTIVITY_MAPPING[code].categorie }}
+              <span class="paint-dot" :style="{ background: chipColor(code) }"></span>
+              {{ chipLabel(code) }}
             </button>
           </div>
           <!-- Outil effaceur -->
@@ -371,12 +358,12 @@
                 class="quick-chip"
                 :class="{ 'quick-chip-selected': quickMode.code === code }"
                 :style="quickMode.code === code
-                  ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: ACTIVITY_MAPPING[code].couleur.replace(/,\s*[\d.]+\s*\)/, ', 0.18)') }
+                  ? { borderColor: chipColor(code), background: chipColor(code).replace(/,\s*[\d.]+\s*\)/, ', 0.18)') }
                   : {}"
                 @click="selectQuickChip(code)"
               >
-                <span class="quick-chip-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
-                {{ ACTIVITY_MAPPING[code].categorie }}
+                <span class="quick-chip-dot" :style="{ background: chipColor(code) }"></span>
+                {{ chipLabel(code) }}
               </button>
             </div>
             <!-- Gomme -->
@@ -492,7 +479,7 @@
                     'mm-cell-ferie':  monthFeries.has(iso),
                     'mm-inactive':    monthMatrix[fullName]?.[iso]?.inactive,
                     'mm-cell-load':   monthMatrix[fullName]?.[iso]?.loading || quickSavingCells.has(`${fullName}|${iso}`),
-                    'mm-cell-quick':  quickMode.active && quickMode.code && !monthMatrix[fullName]?.[iso]?.inactive && !monthSamedis.has(iso),
+                    'mm-cell-quick':  quickMode.active && quickMode.code && !monthMatrix[fullName]?.[iso]?.inactive && (!monthSamedis.has(iso) || dayPresetActive),
                     'mm-cell-dragging': isDragging && dragFullName === fullName && dragIsos.has(iso),
                   }"
                   :style="monthMatrix[fullName]?.[iso]?.bg
@@ -1518,9 +1505,9 @@ const monthOffset = ref(0)        // mois relatif au mois courant
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   ChevronLeft, ChevronRight, CalendarCheck,
-  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2, ArrowUpFromLine, DatabaseZap,
+  Check, Plus, Users, Eraser, X, ArrowUpDown, FlaskConical, LayoutGrid, Zap, FileUp, Trash2, ArrowUpFromLine,
 } from 'lucide-vue-next'
-import { useAdminStore, ETP_CODES, QUICK_PRESETS, TIME_SLOTS } from '@/stores/adminStore'
+import { useAdminStore, ETP_CODES, TIME_SLOTS, DAY_PRESETS, resolveQuickTarget } from '@/stores/adminStore'
 import { parseEtpFromExcel } from '@/stores/forecastStore'
 import { useUserStore } from '@/stores/userStore'
 import { useDataStore, ACTIVITY_MAPPING, HORAIRE_RANK } from '@/stores/dataStore'
@@ -1537,9 +1524,6 @@ const etpFileInput     = ref(null)
 const etpImporting     = ref(false)
 const etpImportMsg     = ref('')   // feedback message
 
-/* ── Migration one-shot ETP/Covéa → collection dédiée planning_etp ── */
-const migrating    = ref(false)
-const migrateMsg   = ref('')
 const confirmClearMonth  = ref(false)
 const clearingMonth      = ref(false)
 const confirmPublishMonth = ref(false)
@@ -1559,13 +1543,27 @@ const dragStartIso  = ref(null)   // iso au mousedown — pour drag bidirectionn
 const dragIsos      = ref(new Set())
 
 const QUICK_CHIP_GROUPS = [
-  { label: 'Matin',   codes: ['0', '9', '12', '20', '28'] },
+  { label: 'Matin',   codes: ['0', '9', '12', '20', 'samedi', '28'] },
   { label: 'Midi',    codes: ['1', '10', '13', '21'] },
   { label: 'Aprem',   codes: ['15', '16', '17', '22', '27'] },
   { label: 'Soir',    codes: ['2', '11', '14', '23', '29'] },
   { label: 'Pilote',  codes: ['26', '32'] },
   { label: 'Absence', codes: ['30', '6', '8'] },
+  { label: 'Autre',   codes: ['5', '7'] },
 ]
+
+/* Un chip peut être un code d'activité (ex. '20') ou une clé DAY_PRESETS (ex.
+   'samedi'). Ces helpers résolvent libellé, couleur et code réel dans les deux cas. */
+/** Code d'activité réel derrière un identifiant de chip */
+function realCode(id) { return DAY_PRESETS[id]?.code ?? id }
+/** Libellé affiché du chip */
+function chipLabel(id) { return DAY_PRESETS[id]?.label ?? ACTIVITY_MAPPING[id]?.categorie ?? id }
+/** Couleur du chip (pastille + état actif) */
+function chipColor(id) { return ACTIVITY_MAPPING[realCode(id)]?.couleur ?? 'var(--accent)' }
+
+/* Un day-preset (Samedi/Astreinte) est sélectionné → autorise l'assignation
+   sur les samedis et jours fériés, normalement bloqués en mode rapide. */
+const dayPresetActive = computed(() => DAY_PRESETS[quickMode.value.code] != null)
 
 function toggleQuickMode() {
   quickMode.value.active = !quickMode.value.active
@@ -1580,7 +1578,7 @@ function selectQuickChip(code) {
 function onCellMouseDown(event, fullName, iso) {
   if (!quickMode.value.active || !quickMode.value.code) return
   if (monthMatrix.value[fullName]?.[iso]?.inactive) return
-  if (monthSamedis.value.has(iso) || monthFeries.value.has(iso)) return
+  if ((monthSamedis.value.has(iso) || monthFeries.value.has(iso)) && !dayPresetActive.value) return
   event.preventDefault()
   isDragging.value   = true
   dragFullName.value = fullName
@@ -1591,7 +1589,7 @@ function onCellMouseDown(event, fullName, iso) {
 function onCellMouseEnter(fullName, iso) {
   if (!isDragging.value || fullName !== dragFullName.value) return
   if (monthMatrix.value[fullName]?.[iso]?.inactive) return
-  if (monthSamedis.value.has(iso) || monthFeries.value.has(iso)) return
+  if ((monthSamedis.value.has(iso) || monthFeries.value.has(iso)) && !dayPresetActive.value) return
   // Recalcule la plage depuis dragStartIso jusqu'à iso (bidirectionnel)
   const allDates = monthWorkDates.value
   const si = allDates.indexOf(dragStartIso.value)
@@ -1644,7 +1642,7 @@ async function quickAssignCell(fullName, iso) {
     if (code === 'erase') {
       newActivites = new Array(45).fill('')
     } else {
-      const preset = QUICK_PRESETS[code]
+      const { code: actCode, blocks: preset } = resolveQuickTarget(code)
       if (!preset) return
 
       const existing     = dayResult.ressources?.find(r => `${r.nom} ${r.prenom}` === fullName)
@@ -1653,7 +1651,7 @@ async function quickAssignCell(fullName, iso) {
       // Applique le preset (remplace les blocs qui chevauchent, garde les autres)
       const curBlocks = admin.parseBlocks(curActivites)
       const kept      = curBlocks.filter(b => !preset.some(p => p.startSlot < b.endSlot && p.endSlot > b.startSlot))
-      const newBlocks = [...kept, ...preset.map(p => ({ code, ...p }))].sort((a, b) => a.startSlot - b.startSlot)
+      const newBlocks = [...kept, ...preset.map(p => ({ code: actCode, ...p }))].sort((a, b) => a.startSlot - b.startSlot)
       newActivites    = admin.buildActivites(newBlocks)
     }
 
@@ -1739,12 +1737,12 @@ async function applyPresetToSelected(code) {
     if (code === 'erase') {
       newActivites = new Array(45).fill('')
     } else {
-      const preset = QUICK_PRESETS[code]
+      const { code: actCode, blocks: preset } = resolveQuickTarget(code)
       if (!preset) continue
       const curActivites = r.activites || new Array(45).fill('')
       const curBlocks    = admin.parseBlocks(curActivites)
       const kept         = curBlocks.filter(b => !preset.some(p => p.startSlot < b.endSlot && p.endSlot > b.startSlot))
-      const newBlocks    = [...kept, ...preset.map(p => ({ code, ...p }))].sort((a, b) => a.startSlot - b.startSlot)
+      const newBlocks    = [...kept, ...preset.map(p => ({ code: actCode, ...p }))].sort((a, b) => a.startSlot - b.startSlot)
       newActivites       = admin.buildActivites(newBlocks)
     }
     paintSaving.value.add(r.idPersonne)
@@ -1774,7 +1772,7 @@ const paintOriginalActivites = ref([])    // snapshot des activités au mousedow
 const paintSaving           = ref(new Set())
 
 const PAINT_GROUPS = [
-  { label: 'Matin',   codes: ['0', '9', '12', '20', '28'] },
+  { label: 'Matin',   codes: ['0', '9', '12', '20', 'samedi', '28'] },
   { label: 'Midi',    codes: ['1', '10', '13', '21'] },
   { label: 'Aprem',   codes: ['15', '16', '17', '22', '27'] },
   { label: 'Soir',    codes: ['2', '11', '14', '23', '29'] },
@@ -1821,7 +1819,7 @@ const paintInfo = computed(() => {
   const durStr    = m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`
   const actLabel  = paintCode.value === 'erase'
     ? 'Effacer'
-    : (ACTIVITY_MAPPING[paintCode.value]?.categorie ?? paintCode.value)
+    : (DAY_PRESETS[paintCode.value]?.label ?? ACTIVITY_MAPPING[realCode(paintCode.value)]?.categorie ?? paintCode.value)
   return { name, startTime, endTime, durStr, actLabel }
 })
 
@@ -1834,7 +1832,7 @@ function applyPaintBuffer() {
   const s   = Math.min(paintSlotStart.value, paintSlotEnd.value)
   const e   = Math.max(paintSlotStart.value, paintSlotEnd.value)
   for (let i = s; i <= e; i++) {
-    buf[i] = paintCode.value === 'erase' ? '' : String(paintCode.value)
+    buf[i] = paintCode.value === 'erase' ? '' : realCode(String(paintCode.value))
   }
   paintBuffer.value = { ...paintBuffer.value, [id]: buf }
 }
@@ -1888,25 +1886,6 @@ async function endPaint() {
     const next = new Set(paintSaving.value)
     next.delete(id)
     paintSaving.value = next
-  }
-}
-
-
-async function runEtpMigration() {
-  if (migrating.value) return
-  if (!confirm('Migrer les données ETP + Équipe Covéa de tous les plannings vers la collection dédiée « planning_etp » ?\n\nOpération non destructive, à lancer une seule fois.')) return
-  migrating.value  = true
-  migrateMsg.value = 'Migration…'
-  try {
-    const res = await admin.migrateEtpToDedicated((done, total) => {
-      migrateMsg.value = `Migration… ${done}/${total}`
-    })
-    migrateMsg.value = `✓ ${res.migrated} jours migrés (${res.skipped} sans ETP)`
-  } catch (err) {
-    migrateMsg.value = `Erreur : ${err.message}`
-  } finally {
-    migrating.value = false
-    setTimeout(() => { migrateMsg.value = '' }, 8000)
   }
 }
 

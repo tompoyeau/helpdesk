@@ -51,12 +51,12 @@
                   class="activity-chip activity-chip-sm"
                   :class="{ selected: editingBlock.code === code }"
                   :style="editingBlock.code === code
-                    ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: chipBg(ACTIVITY_MAPPING[code].couleur) }
+                    ? { borderColor: chipColor(code), background: chipBg(chipColor(code)) }
                     : {}"
                   @click="selectEditCode(code)"
                 >
-                  <span class="chip-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
-                  {{ ACTIVITY_MAPPING[code].categorie }}
+                  <span class="chip-dot" :style="{ background: chipColor(code) }"></span>
+                  {{ chipLabel(code) }}
                 </button>
               </div>
             </div>
@@ -117,12 +117,12 @@
               class="activity-chip"
               :class="{ selected: newBlock.code === code }"
               :style="newBlock.code === code
-                ? { borderColor: ACTIVITY_MAPPING[code].couleur, background: chipBg(ACTIVITY_MAPPING[code].couleur) }
+                ? { borderColor: chipColor(code), background: chipBg(chipColor(code)) }
                 : {}"
               @click="selectCode(code)"
             >
-              <span class="chip-dot" :style="{ background: ACTIVITY_MAPPING[code].couleur }"></span>
-              {{ ACTIVITY_MAPPING[code].categorie }}
+              <span class="chip-dot" :style="{ background: chipColor(code) }"></span>
+              {{ chipLabel(code) }}
             </button>
           </div>
         </div>
@@ -544,7 +544,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { X, Trash2, Plus, Zap, Users, CalendarDays, Clock, Pencil, Check, Search } from 'lucide-vue-next'
-import { useAdminStore, TIME_SLOTS, QUICK_PRESETS } from '@/stores/adminStore'
+import { useAdminStore, TIME_SLOTS, QUICK_PRESETS, DAY_PRESETS } from '@/stores/adminStore'
 import { ACTIVITY_MAPPING } from '@/stores/dataStore'
 
 const props = defineProps({
@@ -587,15 +587,35 @@ const activityOptions = Object.entries(ACTIVITY_MAPPING)
 
 /* ── Groupes de chips ── */
 const CHIP_GROUPS = [
-  { label: 'Matin', codes: ['0', '9', '12', '20', '28'] },
+  { label: 'Matin', codes: ['0', '9', '12', '20', 'samedi', '28'] },
   { label: 'Midi',  codes: ['1', '10', '13', '21'] },
   { label: 'Aprem', codes: ['15', '16', '17', '22', '27'] },
   { label: 'Soir',  codes: ['2', '11', '14', '23', '29'] },
   { label: 'Autre', codes: ['30', '6', '8', '5', '7', '31', '24', '26', '32'] },
 ]
 
+/* Un chip peut être un code d'activité ('20') ou une clé DAY_PRESETS ('samedi'). */
+function realCode(id)  { return DAY_PRESETS[id]?.code ?? id }
+function chipLabel(id) { return DAY_PRESETS[id]?.label ?? ACTIVITY_MAPPING[id]?.categorie ?? id }
+function chipColor(id) { return ACTIVITY_MAPPING[realCode(id)]?.couleur ?? 'var(--accent)' }
+
 /* ── Presets créneaux (importés depuis adminStore) ── */
 const PRESETS = QUICK_PRESETS
+
+/** Applique un ajout rapide « journée type » (ex. Samedi) : ajoute ses blocs en
+    remplaçant ceux qui chevauchent, garde les autres. */
+function applyDayPreset(id) {
+  const def = DAY_PRESETS[id]
+  if (!def) return
+  overlapError.value = ''
+  const kept = blocks.value.filter(b =>
+    !def.blocks.some(p => p.startSlot < b.endSlot && p.endSlot > b.startSlot)
+  )
+  const added = def.blocks.map(p => ({ code: def.code, ...p }))
+  blocks.value = [...kept, ...added].sort((a, b) => a.startSlot - b.startSlot)
+  autoFilledCode.value = null
+  newBlock.value = { code: '', startSlot: 0, endSlot: 4 }
+}
 
 function onCodeChange() {
   newBlock.value.startSlot = 0
@@ -608,6 +628,11 @@ function onCodeChange() {
 const autoFilledCode = ref(null)
 
 function selectCode(code) {
+  // Chip « journée type » (Samedi) : applique directement ses blocs
+  if (DAY_PRESETS[code]) {
+    applyDayPreset(code)
+    return
+  }
   if (newBlock.value.code === code) return
 
   // Si le remplissage actuel vient d'un auto-preset non modifié → on le retire
@@ -626,6 +651,15 @@ function selectCode(code) {
   }
 }
 function selectEditCode(code) {
+  // Chip « journée type » : convertit le bloc édité en son code réel + horaires
+  if (DAY_PRESETS[code]) {
+    const def = DAY_PRESETS[code]
+    editingBlock.value.code      = def.code
+    editingBlock.value.startSlot = def.blocks[0].startSlot
+    editingBlock.value.endSlot   = def.blocks[def.blocks.length - 1].endSlot
+    editError.value = ''
+    return
+  }
   editingBlock.value.code = code
   editError.value = ''
 }

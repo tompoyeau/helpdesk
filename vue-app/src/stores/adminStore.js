@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { db, auth, authSecondary } from '@/firebase/config'
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, collection,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, collection,
 } from 'firebase/firestore'
 import {
   createUserWithEmailAndPassword,
@@ -21,6 +21,7 @@ const S_APREM    = [{ startSlot: 4, endSlot: 18 }, { startSlot: 22, endSlot: 38 
 const S_SOIR     = [{ startSlot: 5, endSlot: 21 }, { startSlot: 26, endSlot: 40 }]
 const S_PILOTEBO = [{ startSlot: 3, endSlot: 19 }, { startSlot: 22, endSlot: 36 }]
 const S_FULL_DAY = [{ startSlot: 0, endSlot: 44 }]
+const S_MATIN_8_12 = [{ startSlot: 0, endSlot: 16 }]   // 08:00 → 12:00
 
 export const QUICK_PRESETS = {
   '0': S_MATIN, '9': S_MATIN, '20': S_MATIN, '12': S_MATIN, '28': S_MATIN,
@@ -29,9 +30,27 @@ export const QUICK_PRESETS = {
   '2': S_SOIR,  '11': S_SOIR, '23': S_SOIR,  '14': S_SOIR, '29': S_SOIR,
   '26': S_PILOTEBO,
   '32': S_PILOTEBO,
+  '7':  S_MATIN_8_12,  // Astreinte 8h-12h
+  '5':  S_APREM,       // Formation 9h-12h30 / 13h30-17h30
   '30': S_FULL_DAY,  // CP
   '6':  S_FULL_DAY,  // Indisponible
   '8':  S_FULL_DAY,  // Récup
+}
+
+/* ── Ajout rapide « Samedi » ───────────────────────────────────────────────
+   Chip à libellé propre qui écrit du TLT à domicile (code 20) sur 8h-12h.
+   Distinct du chip « TLT Matin » (même code mais preset journée complète).
+   Porte un vrai code d'activité → rendu correct partout (semaine, mois, stats). */
+export const DAY_PRESETS = {
+  samedi: { code: '20', label: 'Samedi', blocks: S_MATIN_8_12 },
+}
+
+/* Résout un identifiant de chip (code d'activité réel OU clé DAY_PRESETS)
+   → { code, blocks }. `blocks` vaut null si aucun preset connu. */
+export function resolveQuickTarget(id) {
+  const dp = DAY_PRESETS[id]
+  if (dp) return { code: dp.code, blocks: dp.blocks }
+  return { code: id, blocks: QUICK_PRESETS[id] || null }
 }
 
 // Codes d'activité qui comptent dans l'ETP :
@@ -321,31 +340,6 @@ export const useAdminStore = defineStore('admin', () => {
     return arr
   }
 
-  /**
-   * Migration one-shot : copie etp/fixed/répartition de tous les docs `plannings`
-   * vers la collection dédiée `planning_etp` (même ID de jour). Non destructif —
-   * les anciens champs restent dans `plannings` mais ne sont plus lus par l'app.
-   * À lancer une seule fois, connecté en admin. Idempotent (merge).
-   */
-  async function migrateEtpToDedicated(onProgress) {
-    const snap = await getDocs(collection(db, 'plannings'))
-    const docs = snap.docs
-    let migrated = 0, skipped = 0
-    let batch = writeBatch(db), ops = 0
-
-    for (const d of docs) {
-      const etpData = extractEtpData(d.data())
-      if (!etpData) { skipped++; continue }
-      batch.set(doc(db, ETP_COLLECTION, d.id), etpData, { merge: true })
-      ops++; migrated++
-      if (ops >= 400) { await batch.commit(); batch = writeBatch(db); ops = 0 }
-      if (onProgress) onProgress(migrated + skipped, docs.length)
-    }
-    if (ops) await batch.commit()
-
-    return { migrated, skipped, total: docs.length }
-  }
-
   /* ── Personnes actives à une date donnée ── */
   function isActiveOn(person, date) {
     const parse = str => {
@@ -368,7 +362,6 @@ export const useAdminStore = defineStore('admin', () => {
     inputToFirestore, firestoreToInput,
     createPersonne, createPersonneWithAuth, updatePersonne, deletePersonne,
     loadDayPlanning, saveDayPlanning, saveEtpAndFixed, clearMonthPlanning, copyMonthToProd,
-    migrateEtpToDedicated,
     parseBlocks, buildActivites, isActiveOn,
   }
 })
