@@ -5,6 +5,7 @@ import PersonView    from '@/views/PersonView.vue'
 import CatView       from '@/views/CatView.vue'
 import AdminView     from '@/views/AdminView.vue'
 import EquiteView    from '@/views/EquiteView.vue'
+import MethodologieView from '@/views/MethodologieView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: '/planning',     name: 'planning',  component: PlanningView  },
     { path: '/dashboard',    name: 'dashboard', component: DashboardView },
     { path: '/equite',       name: 'equite',    component: EquiteView    },
+    { path: '/methodologie', name: 'methodologie', component: MethodologieView },
     { path: '/person/:name', name: 'person',    component: PersonView    },
     { path: '/cat/:name',    name: 'cat',       component: CatView       },
     { path: '/admin',        name: 'admin',     component: AdminView     },

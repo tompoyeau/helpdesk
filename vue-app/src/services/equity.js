@@ -52,16 +52,19 @@ export const EQUITY_DIMENSIONS = [
     color: '#65a30d',             reco: 'À prioriser sur les jours verts' },
   { key: 'tlt',    label: 'Télétravail', direction: 'reward', metric: 'rate',  unitLabel: 'jours de TLT',
     color: 'rgba(167,139,250,1)', reco: 'À prioriser sur le télétravail' },
-  { key: 'samedi', label: 'Samedis',     direction: 'burden', metric: 'count', unitLabel: 'samedis',
-    color: 'rgba(244,114,94,1)',  reco: 'À soulager sur les samedis' },
+  { key: 'samedi', label: 'Samedis travaillés', direction: 'burden', metric: 'count', unitLabel: 'samedis',
+    color: 'rgba(244,114,94,1)',  reco: 'À soulager sur les samedis travaillés' },
+  { key: 'samedi_astreinte', label: "Samedis d'astreinte", direction: 'burden', metric: 'count', unitLabel: "samedis d'astreinte",
+    color: 'rgba(234,179,8,1)',   reco: "À soulager sur les astreintes du samedi" },
 ]
 
 const DIM_BY_KEY = Object.fromEntries(EQUITY_DIMENSIONS.map(d => [d.key, d]))
 
 // Éligibilité d'une personne à une dimension.
-// TLT    : exclut peutTLT === false ET les personnes de BO (peutBO === true).
-// SAMEDI : exclut seulement peutTLT === false (les personnes de BO font des samedis).
-// Dans les deux cas, les exclus ne sont ni signalés, ni comptés dans la moyenne.
+// TLT              : exclut peutTLT === false ET les personnes de BO (peutBO === true).
+// SAMEDI TRAVAILLÉ : exclut peutTLT === false (samedis = TLT Matin ; les BO en font).
+// SAMEDI ASTREINTE : aucune restriction TLT (l'astreinte n'est pas liée au télétravail).
+// Dans tous les cas, les exclus ne sont ni signalés, ni comptés dans la moyenne.
 function dimEligible(key, person) {
   if (key === 'tlt')    return person?.peutTLT !== false && person?.peutBO !== true
   if (key === 'samedi') return person?.peutTLT !== false
@@ -72,13 +75,23 @@ function dimEligible(key, person) {
 
 function round1(v) { return Math.round(v * 10) / 10 }
 
+// « Soir » au sens de toute l'app : Site + TLT + TLT Agence, SANS les journées
+// vertes (Agence Soir). Les Agence sont comptées dans la dimension « Jours verts »,
+// pas comme un fardeau du soir (sinon double comptage). soirDays/tauxSoir bruts
+// incluent l'Agence, on ne les utilise donc pas ici.
+function soirConsDays(stats) {
+  const d = stats.detail?.soir || {}
+  return (d.site || 0) + (d.tlt || 0) + (d.tlt_agence || 0)
+}
+
 // Valeur comparée (le « taux ») d'une personne pour une dimension
 function valueOf(p, key) {
   switch (key) {
-    case 'soir':   return p.stats.tauxSoir
+    case 'soir':   return p.stats.workDays > 0 ? Math.round(soirConsDays(p.stats) / p.stats.workDays * 100) : 0
     case 'agence': return p.stats.tauxAgence
     case 'tlt':    return p.stats.tauxTlt
     case 'samedi': return p.samedi
+    case 'samedi_astreinte': return p.samediAstreinte
     default:       return 0
   }
 }
@@ -86,10 +99,11 @@ function valueOf(p, key) {
 // Jours bruts correspondants (affichés au survol)
 function daysOf(p, key) {
   switch (key) {
-    case 'soir':   return p.stats.soirDays
+    case 'soir':   return soirConsDays(p.stats)
     case 'agence': return p.stats.agenceDays
     case 'tlt':    return p.stats.tltDays
     case 'samedi': return p.samedi
+    case 'samedi_astreinte': return p.samediAstreinte
     default:       return 0
   }
 }
@@ -120,20 +134,23 @@ function countSaturdaysInPeriod(startIso, endIso) {
   return n
 }
 
-// Nombre de samedis réellement travaillés (hors absences et fériés) sur la période
-function countSaturdaysWorked(planningData, name, startIso, endIso) {
+// Samedis de la période, séparés en « réellement travaillés » (hors astreinte)
+// et « d'astreinte ». Un samedi peut compter dans les deux s'il cumule les deux.
+function countSaturdays(planningData, name, startIso, endIso) {
   const pData = planningData[name] || {}
-  let n = 0
+  let worked = 0, astreinte = 0
   for (const [iso, entries] of Object.entries(pData)) {
     if (iso < startIso || iso > endIso) continue
     const dt = new Date(iso + 'T12:00:00')
     if (dt.getDay() !== 6 || isFerie(iso)) continue   // samedis uniquement
-    if (Array.isArray(entries) &&
-        entries.some(e => e.categorie && !ABSENCE_CATS.has(e.categorie) && (e.slots || 0) > 0)) {
-      n++
-    }
+    if (!Array.isArray(entries)) continue
+    const hasAstreinte = entries.some(e => e.categorie === 'Astreinte' && (e.slots || 0) > 0)
+    const hasWork = entries.some(e =>
+      e.categorie && e.categorie !== 'Astreinte' && !ABSENCE_CATS.has(e.categorie) && (e.slots || 0) > 0)
+    if (hasAstreinte) astreinte++
+    if (hasWork)      worked++
   }
-  return n
+  return { worked, astreinte }
 }
 
 /**
@@ -165,8 +182,8 @@ export function computeEquity(planningData, personNames, personnesData, nameToUi
     const stats = computePersonStats(planningData, name, { startIso, endIso })
     if (!stats || stats.workDays < MIN_WORK_DAYS) continue
 
-    const samedi = countSaturdaysWorked(planningData, name, startIso, endIso)
-    perPerson.push({ name, person, stats, workDays: stats.workDays, samedi })
+    const sat = countSaturdays(planningData, name, startIso, endIso)
+    perPerson.push({ name, person, stats, workDays: stats.workDays, samedi: sat.worked, samediAstreinte: sat.astreinte })
   }
 
   // 2. Analyse par dimension — moyenne d'équipe calculée sur les seuls éligibles
@@ -178,11 +195,14 @@ export function computeEquity(planningData, personNames, personnesData, nameToUi
     let teamRate = 0
     if (dim.metric === 'count') {
       teamRate = n ? round1(eligible.reduce((s, p) => s + valueOf(p, dim.key), 0) / n) : 0
+    } else if (dim.key === 'soir') {
+      // Soir consolidé (hors Agence) agrégé : Σ soirs ÷ Σ jours travaillés
+      const sumSoir = eligible.reduce((s, p) => s + soirConsDays(p.stats), 0)
+      const sumWork = eligible.reduce((s, p) => s + p.stats.workDays, 0)
+      teamRate = sumWork > 0 ? Math.round(sumSoir / sumWork * 100) : 0
     } else {
       const team = computeTeamStats(eligible.map(p => p.stats))
-      teamRate = team
-        ? (dim.key === 'soir' ? team.tauxSoir : dim.key === 'agence' ? team.tauxAgence : team.tauxTlt)
-        : 0
+      teamRate = team ? (dim.key === 'agence' ? team.tauxAgence : team.tauxTlt) : 0
     }
     const teamDaysAvg = n ? round1(eligible.reduce((s, p) => s + daysOf(p, dim.key), 0) / n) : 0
 

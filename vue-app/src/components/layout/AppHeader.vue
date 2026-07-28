@@ -64,6 +64,10 @@
             <UserCircle :size="14" />
             <span>Mon profil</span>
           </RouterLink>
+          <RouterLink to="/methodologie" class="user-dropdown-item">
+            <BookOpen :size="14" />
+            <span>Méthodologie</span>
+          </RouterLink>
           <button class="user-dropdown-item user-dropdown-item--danger" @click="auth.signOut()">
             <LogOut :size="14" />
             <span>Déconnexion</span>
@@ -80,7 +84,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUserStore } from '@/stores/userStore'
-import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield, Scale, User, UserCircle } from 'lucide-vue-next'
+import { CalendarDays, LayoutDashboard, Moon, Sun, LogOut, Shield, Scale, BookOpen, User, UserCircle } from 'lucide-vue-next'
 import DateRangePicker   from '@/components/layout/DateRangePicker.vue'
 import NotificationBell  from '@/components/layout/NotificationBell.vue'
 

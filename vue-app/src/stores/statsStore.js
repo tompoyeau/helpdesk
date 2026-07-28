@@ -152,18 +152,24 @@ const CAPPED_CATS_SET = new Set(
  * @param {object} capped    - { cp, indispo, recup } — déjà en jours (plafonnés)
  * @param {number} [n=1]     - nombre de personnes (pour les moyennes équipe)
  */
-function statsFromRaw(hm, capped, n = 1) {
+function statsFromRaw(hm, capped, extra = {}, n = 1) {
+  const otherTlt   = extra.tlt   || 0   // BOTLT : télétravail sans horaire → compte comme TLT
+  const otherAutre = extra.autre || 0   // BO / Pilote / Astreinte / RH : travaillé mais « autre »
+
   // ── Slots travaillés par horaire ──────────────────────────────
   const matinS  = hm.matin.site + hm.matin.tlt + hm.matin.tlt_agence + hm.matin.agence + hm.matin.w11
   const midiS   = hm.midi.site  + hm.midi.tlt  + hm.midi.tlt_agence  + hm.midi.agence
   const apremS  = hm.aprem.site + hm.aprem.tlt + hm.aprem.tlt_agence + hm.aprem.agence
   const soirS   = hm.soir.site  + hm.soir.tlt  + hm.soir.tlt_agence  + hm.soir.agence  + hm.soir.w11
-  const workS   = matinS + midiS + apremS + soirS   // total travaillé (slots)
+  const horaireS = matinS + midiS + apremS + soirS       // slots avec horaire
+  // Total travaillé = horaires + BOTLT + autre (BO, Pilote, Astreinte, RH)
+  const workS   = horaireS + otherTlt + otherAutre
 
   // ── Slots travaillés par mode ─────────────────────────────────
-  const tltS    = HORAIRES.reduce((s, h) => s + hm[h].tlt + hm[h].tlt_agence, 0)
+  const tltHoraireS = HORAIRES.reduce((s, h) => s + hm[h].tlt + hm[h].tlt_agence, 0)
+  const tltS    = tltHoraireS + otherTlt      // TLT total (domicile + agence + BOTLT)
   const agenceS = HORAIRES.reduce((s, h) => s + hm[h].agence, 0)
-  const siteS   = workS - tltS - agenceS
+  const siteS   = horaireS - tltHoraireS - agenceS   // « site » = horaires hors TLT/Agence
 
   // ── Absences (déjà en jours, plafonnées par date) ─────────────
   const cpJ      = capped.cp      || 0
@@ -178,8 +184,8 @@ function statsFromRaw(hm, capped, n = 1) {
   // ── Taux : base = slots travaillés (pas d'erreur d'arrondi) ───
   const rate = (slots) => workS > 0 ? Math.round(slots / workS * 100) : 0
 
-  // ── Distribution exclusive 6 familles → somme = 100 % workDays ─
-  // site-matin + site-midi + site-aprem + site-soir + tlt + agence = 100 %
+  // ── Distribution exclusive → somme = 100 % workDays ─
+  // site-matin + site-midi + site-aprem + site-soir + tlt + agence + autre = 100 %
   const dist = {
     matin:  rate(hm.matin.site + hm.matin.w11),  // w11 inclus pour que dist somme à 100 %
     midi:   rate(hm.midi.site),
@@ -187,6 +193,7 @@ function statsFromRaw(hm, capped, n = 1) {
     soir:   rate(hm.soir.site  + hm.soir.w11),
     tlt:    rate(tltS),
     agence: rate(agenceS),
+    autre:  rate(otherAutre),   // BO / Pilote / Astreinte / RH
   }
 
   return {
@@ -201,6 +208,7 @@ function statsFromRaw(hm, capped, n = 1) {
     siteDays:    r1(siteS   / spd),
     tltDays:     r1(tltS    / spd),
     agenceDays:  r1(agenceS / spd),
+    otherDays:   r1(otherAutre / spd),   // BO / Pilote / Astreinte / RH (hors BOTLT, compté en TLT)
 
     // ── Absences ─────────────────────────────────────────────────
     cpDays:      r1(cpJ),
@@ -237,6 +245,7 @@ function statsFromRaw(hm, capped, n = 1) {
     avgSoirDays:   r1(soirS/spd   / n),
     avgTltDays:    r1(tltS/spd    / n),
     avgAgenceDays: r1(agenceS/spd / n),
+    avgOtherDays:  r1(otherAutre/spd / n),
     avgAbsentDays: r1(absentJ     / n),
   }
 }
@@ -258,6 +267,8 @@ function statsFromRaw(hm, capped, n = 1) {
 export function computePersonStats(planningData, personName, { startIso, endIso }) {
   const hm      = emptyHm()
   const capped  = { cp: 0, indispo: 0, recup: 0 }
+  let   otherTltS   = 0   // BOTLT : télétravail sans horaire (compté en TLT)
+  let   otherAutreS = 0   // BO, Pilote, Astreinte, RH : travaillé mais « autre »
 
   const pData = planningData[personName] || {}
 
@@ -266,7 +277,7 @@ export function computePersonStats(planningData, personName, { startIso, endIso 
     if (iso < startIso || iso > endIso) continue
     // Filtre week-end et jours fériés
     const dt = new Date(iso + 'T12:00:00')
-    if (dt.getDay() === 0 || dt.getDay() === 6 || isFerie(iso)) continue
+    if (dt.getDay() === 0 || isFerie(iso)) continue   // exclut dimanche + fériés (samedi compté)
 
     // Accumulation des absences plafonnées par date
     const dayAbsSlots = { cp: 0, indispo: 0, recup: 0 }
@@ -281,10 +292,15 @@ export function computePersonStats(planningData, personName, { startIso, endIso 
         // Absence : accumulation intra-jour, plafonnée après
         dayAbsSlots[map.mode] += s
       } else if (map.horaire) {
-        // Shift travaillé : accumulation directe
+        // Shift avec horaire (site/tlt/agence + Formation) : accumulation directe
         hm[map.horaire][map.mode] += s
+      } else if (map.mode === 'tlt') {
+        // BOTLT : télétravail sans horaire → compté comme TLT
+        otherTltS += s
+      } else {
+        // Travaillé sans horaire (BO, PiloteBO, Pilote, Astreinte, RH)
+        otherAutreS += s
       }
-      // Formation / BO / autre : non comptés pour l'instant dans workDays
     }
 
     // Plafonnement des absences à 1j/date : min(slots / 30, 1)
@@ -295,12 +311,12 @@ export function computePersonStats(planningData, personName, { startIso, endIso 
     }
   }
 
-  const stats = statsFromRaw(hm, capped)
+  const stats = statsFromRaw(hm, capped, { tlt: otherTltS, autre: otherAutreS })
 
   return {
     ...stats,
     // Slots bruts conservés pour l'agrégation équipe (computeTeamStats)
-    _raw: { hm, cp: capped.cp, indispo: capped.indispo, recup: capped.recup },
+    _raw: { hm, otherTlt: otherTltS, otherAutre: otherAutreS, cp: capped.cp, indispo: capped.indispo, recup: capped.recup },
   }
 }
 
@@ -321,19 +337,23 @@ export function computeTeamStats(personStatsList) {
   // Sommation des slots bruts
   const sumHm  = emptyHm()
   const sumCap = { cp: 0, indispo: 0, recup: 0 }
+  let   sumOtherTlt = 0
+  let   sumOtherAutre = 0
 
   for (const ps of list) {
     const r = ps._raw
     for (const h of HORAIRES) {
       for (const m of MODES_WORK) sumHm[h][m] += r.hm[h][m]
     }
+    sumOtherTlt    += r.otherTlt   || 0
+    sumOtherAutre  += r.otherAutre || 0
     sumCap.cp      += r.cp
     sumCap.indispo += r.indispo
     sumCap.recup   += r.recup
   }
 
   return {
-    ...statsFromRaw(sumHm, sumCap, list.length),
+    ...statsFromRaw(sumHm, sumCap, { tlt: sumOtherTlt, autre: sumOtherAutre }, list.length),
     count: list.length,
   }
 }
@@ -409,7 +429,7 @@ export function computePersonCatBreakdown(planningData, personName, { startIso, 
   for (const [iso, entries] of Object.entries(pData)) {
     if (iso < startIso || iso > endIso) continue
     const dt = new Date(iso + 'T12:00:00')
-    if (dt.getDay() === 0 || dt.getDay() === 6 || isFerie(iso)) continue
+    if (dt.getDay() === 0 || isFerie(iso)) continue   // exclut dimanche + fériés (samedi compté)
 
     const catSlots = {}
     for (const e of entries) {
@@ -442,7 +462,7 @@ export function countCatDays(planningData, personName, catName, { startIso, endI
   for (const [iso, entries] of Object.entries(pData)) {
     if (iso < startIso || iso > endIso) continue
     const dt = new Date(iso + 'T12:00:00')
-    if (dt.getDay() === 0 || dt.getDay() === 6 || isFerie(iso)) continue
+    if (dt.getDay() === 0 || isFerie(iso)) continue   // exclut dimanche + fériés (samedi compté)
 
     let daySlots = 0
     for (const e of entries) {

@@ -119,6 +119,31 @@ describe('computeEquity', () => {
     expect(['BBB Bbb', 'CCC Ccc']).toContain(prio.counterpart!.name)
   })
 
+  it('sépare les samedis travaillés des samedis d\'astreinte', () => {
+    const SATURDAYS = ['2026-06-06', '2026-06-13', '2026-06-20', '2026-06-27']
+    const withSat = (cat: string, count: number) => {
+      const o = daysOf('Matin')
+      SATURDAYS.slice(0, count).forEach(s => { o[s] = [{ categorie: cat, slots: 30 }] })
+      return o
+    }
+    const planning = {
+      'AAA Aaa': withSat('Matin', 3),      // 3 samedis travaillés
+      'BBB Bbb': withSat('Astreinte', 3),  // 3 samedis d'astreinte
+      'CCC Ccc': daysOf('Matin'),          // 0
+    }
+    const res = computeEquity(planning, Object.keys(planning), {}, {}, WINDOW)
+
+    const trav = res.dimensions.find(d => d.key === 'samedi')!
+    const astr = res.dimensions.find(d => d.key === 'samedi_astreinte')!
+
+    // AAA en tête des samedis travaillés, pas des astreintes
+    expect(trav.worst?.name).toBe('AAA Aaa')
+    expect(trav.rows.find(r => r.name === 'BBB Bbb')?.days).toBe(0)
+    // BBB en tête des astreintes, pas des samedis travaillés
+    expect(astr.worst?.name).toBe('BBB Bbb')
+    expect(astr.rows.find(r => r.name === 'AAA Aaa')?.days).toBe(0)
+  })
+
   it('exclut des samedis les personnes qui ne font pas de TLT', () => {
     const withSat = () => {
       const o = daysOf('Matin')

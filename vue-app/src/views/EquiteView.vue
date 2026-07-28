@@ -36,8 +36,8 @@
         <!-- ── Cartes par dimension (cliquables → drill-down) ── -->
         <div class="eq-dim-grid">
           <div
-            v-for="dim in equity.dimensions"
-            :key="dim.key"
+            v-for="dim in displayDims"
+            :key="dim.isSamedi ? 'samedi-merged' : dim.key"
             class="eq-dim-card"
             :class="[`eq-status-${dim.status}`, { 'eq-dim-open': expandedDim === dim.key }]"
             role="button"
@@ -51,6 +51,12 @@
               </span>
               <span class="eq-dim-label">{{ dim.label }}</span>
               <span class="eq-badge" :class="`eq-badge-${dim.status}`">{{ statusLabel(dim.status) }}</span>
+            </div>
+
+            <!-- Toggle Travaillés / Astreinte (carte Samedis) -->
+            <div v-if="dim.isSamedi" class="eq-sam-toggle" @click.stop>
+              <button :class="{ active: samediMode === 'samedi' }" @click="setSamediMode('samedi')">Travaillés</button>
+              <button :class="{ active: samediMode === 'samedi_astreinte' }" @click="setSamediMode('samedi_astreinte')">Astreinte</button>
             </div>
 
             <div class="eq-dim-team">Part juste : <strong>{{ fmtVal(dim.teamRate, dim) }}</strong></div>
@@ -156,7 +162,7 @@
 import { ref, computed } from 'vue'
 import { useDataStore } from '@/stores/dataStore'
 import { computeEquity } from '@/services/equity'
-import { Scale, CalendarRange, Info, Check, Moon, Sprout, Laptop, CalendarDays, ChevronDown, X, ArrowLeftRight } from 'lucide-vue-next'
+import { Scale, CalendarRange, Info, Check, Moon, Sprout, Laptop, CalendarDays, BellRing, ChevronDown, X, ArrowLeftRight } from 'lucide-vue-next'
 
 const data = useDataStore()
 
@@ -181,13 +187,29 @@ const equity = computed(() => {
   )
 })
 
+/* ── Carte Samedis fusionnée (toggle Travaillés / Astreinte) ── */
+const samediMode = ref('samedi')   // 'samedi' | 'samedi_astreinte'
+function setSamediMode(key) {
+  // Si le drill-down est ouvert sur un samedi, il suit le toggle
+  if (expandedDim.value === 'samedi' || expandedDim.value === 'samedi_astreinte') expandedDim.value = key
+  samediMode.value = key
+}
+
+// Dimensions affichées : les 3 régulières + une carte « Samedis » fusionnée (sous-dim sélectionnée)
+const displayDims = computed(() => {
+  const dims = equity.value?.dimensions || []
+  const regular = dims.filter(d => d.key !== 'samedi' && d.key !== 'samedi_astreinte')
+  const sel = dims.find(d => d.key === samediMode.value)
+  return sel ? [...regular, { ...sel, label: 'Samedis', isSamedi: true }] : regular
+})
+
 /* ── Drill-down ── */
 const expandedDim = ref(null)
 function toggleDim(key) { expandedDim.value = expandedDim.value === key ? null : key }
 const expandedDimObj = computed(() => equity.value?.dimensions.find(d => d.key === expandedDim.value) || null)
 
 /* ── Helpers d'affichage ── */
-const DIM_ICONS = { soir: Moon, agence: Sprout, tlt: Laptop, samedi: CalendarDays }
+const DIM_ICONS = { soir: Moon, agence: Sprout, tlt: Laptop, samedi: CalendarDays, samedi_astreinte: BellRing }
 function dimIcon(key) { return DIM_ICONS[key] || Scale }
 
 function statusLabel(s) {
@@ -247,7 +269,8 @@ function priorityHeadline(p) {
   if (p.dimKey === 'soir')   return p.unfairMult ? `×${p.unfairMult} plus de soirs — ${t}` : `Beaucoup plus de soirs — ${t}`
   if (p.dimKey === 'agence') return p.unfairMult ? `×${p.unfairMult} moins de jours verts — ${t}` : `Aucun jour vert — ${t}`
   if (p.dimKey === 'tlt')    return p.unfairMult ? `×${p.unfairMult} moins de télétravail — ${t}` : `Aucun télétravail — ${t}`
-  if (p.dimKey === 'samedi') return p.unfairMult ? `×${p.unfairMult} plus de samedis — ${t}` : `Beaucoup plus de samedis — ${t}`
+  if (p.dimKey === 'samedi') return p.unfairMult ? `×${p.unfairMult} plus de samedis travaillés — ${t}` : `Beaucoup plus de samedis travaillés — ${t}`
+  if (p.dimKey === 'samedi_astreinte') return p.unfairMult ? `×${p.unfairMult} plus d'astreintes le samedi — ${t}` : `Beaucoup plus d'astreintes le samedi — ${t}`
   return t
 }
 </script>
@@ -291,9 +314,8 @@ function priorityHeadline(p) {
 
 /* Grille dimensions */
 .eq-dim-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 16px;
 }
-@media (max-width: 920px) { .eq-dim-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 520px) { .eq-dim-grid { grid-template-columns: 1fr; } }
 
 .eq-dim-card {
@@ -327,6 +349,20 @@ function priorityHeadline(p) {
 
 .eq-dim-team { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; }
 .eq-dim-team strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* Toggle Travaillés / Astreinte */
+.eq-sam-toggle {
+  display: flex; gap: 3px; margin-bottom: 10px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 2px;
+}
+.eq-sam-toggle button {
+  flex: 1; padding: 3px 6px; font-size: 0.6875rem; font-weight: 700;
+  border: none; border-radius: 5px; background: transparent;
+  color: var(--text-muted); cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.eq-sam-toggle button:hover { color: var(--text); }
+.eq-sam-toggle button.active { background: var(--accent); color: #fff; }
 
 .eq-dim-worst { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
 .eq-worst-name { font-weight: 700; font-size: 0.8125rem; }
