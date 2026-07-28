@@ -114,6 +114,10 @@
           <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:4px">
             semaine {{ weekIdx + 1 }} / {{ weekGroups.length }}
           </span>
+          <span class="fc-sort-locked" title="En vue semaine, les collaborateurs sont toujours triés par horaire">
+            <ArrowUpDown :size="12" />
+            Trié par horaire
+          </span>
         </div>
 
         <!-- Résultat après application -->
@@ -173,8 +177,11 @@
                         'th-lundi':  viewMode === 'month' && weekStarts.has(iso),
                         'th-sam':    getDow(iso) === 'Sam',
                         'th-sorted': forecastSortDay === iso,
+                        'th-day-static': viewMode !== 'month',
                       }"
-                      :title="forecastSortDay === iso ? 'Cliquer pour annuler le tri' : 'Trier par cet horaire'"
+                      :title="viewMode !== 'month'
+                        ? 'Vue semaine — tri par horaire imposé'
+                        : (forecastSortDay === iso ? 'Cliquer pour annuler le tri' : 'Trier par cet horaire')"
                       @click="toggleForecastSort(iso)"
                     >
                       <div class="th-day-inner">
@@ -304,6 +311,7 @@
           <div class="info-section">
             <div class="info-section-title">Back-office (BO)</div>
             <p>Le nombre de postes BO par jour est lu directement depuis le fichier Excel (nombre de lignes "BO" dans chaque bloc journée). Le BO est attribué en rotation équitable parmi les collaborateurs éligibles (<code>peutBO = true</code>) : un classement est établi en début de semaine selon le nombre de semaines BO déjà effectuées, et les <em>N</em> premiers de ce classement font BO chaque jour. Les mêmes personnes restent en BO toute la semaine ; si le besoin augmente un jour donné, on descend dans le classement. Une personne en BO n'est pas affectée à un créneau horaire ce jour-là.</p>
+            <p style="margin-top:6px">Les BO peuvent télétravailler : jusqu'à <strong>2 jours de TLT par semaine</strong> (quota partagé avec le TLT classique), jamais le mercredi. Ces jours apparaissent en catégorie <strong>BO TLT</strong>. Contrainte : il reste <strong>toujours au moins un BO en présentiel chaque jour</strong>.</p>
           </div>
 
         </div>
@@ -570,6 +578,13 @@
   font-size: 0.8125rem; font-weight: 700; color: var(--text);
   min-width: 160px; text-align: center;
 }
+.fc-sort-locked {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: auto;
+  padding: 5px 11px; font-size: 0.75rem; font-weight: 600;
+  background: var(--accent-light); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); color: var(--accent);
+  white-space: nowrap; cursor: default;
+}
 
 /* ── Résultat ── */
 .gen-result {
@@ -641,6 +656,8 @@
   cursor: pointer; user-select: none; transition: background 0.12s;
 }
 .th-day:hover { background: var(--bg-hover); }
+.th-day-static { cursor: default; }
+.th-day-static:hover { background: var(--bg-surface); }
 .th-sorted {
   background: var(--accent-light) !important;
   color: var(--accent);
@@ -1061,7 +1078,7 @@ const SHIFT_SHORT = {
   'Matin':        'Mat', 'Midi':      'Mid',  'Aprem':     'Apr', 'Soir':      'Soi',
   'TLT Matin':    'TM',  'TLT Midi':  'TMi',  'TLT APREM': 'TA',  'TLT Soir':  'TS',
   'Agence Matin': 'AM',  'Agence Midi':'AMi', 'Agence APREM':'AA','Agence Soir':'AS',
-  'BO':           'BO',
+  'BO':           'BO',  'BO TLT':    'BOT',
   'CP':           'CP',  'Indisponible': 'Ind', 'Récup': 'Réc',
   'Formation': 'For',
   '':             '—',
@@ -1164,6 +1181,7 @@ const SHIFT_TO_FAMILY = {
   'Soir':             'soir',  'TLT Soir':          'soir',  'Agence Soir':       'soir',
   'TLT Agence Soir':  'soir',  'SoirW11':           'soir',
   'BO':               'bo',    'PiloteBO':          'bo',    'Pilote':            'bo',
+  'BO TLT':           'bo',    'BOTLT':             'bo',
 }
 
 // Réactif aux modifications à chaud : lit matrix[person][iso] pour chaque date
@@ -1237,8 +1255,10 @@ function etpTitle(iso) {
   )
 }
 
-/* ── Tri par jour ── */
-const forecastSortDay = ref(null)   // ISO du jour trié, ou null (= ordre preview)
+/* ── Tri des collaborateurs ── */
+// Vue mois : tri par jour cliqué (ISO), ou null = ordre du preview.
+// Vue semaine : toujours trié par horaire (imposé, pas de choix).
+const forecastSortDay = ref(null)
 
 // Reset quand un nouveau preview est généré ou quand on change de mode vue
 watch(() => fc.preview, () => { forecastSortDay.value = null })
@@ -1251,12 +1271,33 @@ function shiftRank(shift) {
   return fam !== undefined ? (FAMILY_RANK[fam] ?? 98) : 97  // 97 = absence (CP…)
 }
 
+// Horaire de référence d'une personne sur la semaine visible : le créneau le plus
+// « tôt » (matin < midi < aprem < soir) parmi ses jours. Le shift étant constant
+// sur la semaine, c'est sa famille d'horaire hebdomadaire.
+function weekHoraireRank(person) {
+  let best = 99
+  for (const iso of visibleDates.value) {
+    const r = shiftRank(fc.preview?.matrix[person]?.[iso])
+    if (r < best) best = r
+  }
+  return best
+}
+
+// Tri par jour (clic sur l'entête d'une colonne) — vue mois uniquement
 function toggleForecastSort(iso) {
+  if (viewMode.value !== 'month') return
   forecastSortDay.value = forecastSortDay.value === iso ? null : iso
 }
 
 const sortedPersons = computed(() => {
   const persons = fc.preview?.persons ?? []
+  // Vue semaine : toujours trié par horaire
+  if (viewMode.value === 'week') {
+    return [...persons].sort((a, b) =>
+      weekHoraireRank(a) - weekHoraireRank(b) || a.localeCompare(b, 'fr')
+    )
+  }
+  // Vue mois : tri par jour cliqué, sinon ordre du preview
   if (!forecastSortDay.value) return persons
   const iso = forecastSortDay.value
   return [...persons].sort((a, b) => {

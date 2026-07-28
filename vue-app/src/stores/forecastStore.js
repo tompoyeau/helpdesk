@@ -50,6 +50,7 @@ const SHIFT_PATTERNS = {
   'Agence APREM': { code: '16', blocks: [[4, 18], [22, 38]] },
   'Agence Soir':  { code: '11', blocks: [[5, 21], [26, 40]] },
   'BO':           { code: '26', blocks: [[3, 19], [22, 36]] },  // PiloteBO — 8h45-12h45 / 13h30-17h00
+  'BO TLT':       { code: '32', blocks: [[3, 19], [22, 36]] },  // BOTLT — BO en télétravail, mêmes horaires
   // Absences journée complète (code Firestore → slots 0–44)
   'CP':           { code: '30', blocks: [[0, 45]] },
   'Indisponible': { code: '6',  blocks: [[0, 45]] },
@@ -116,6 +117,7 @@ export const SHIFT_COLORS = {
   'Agence APREM': { bg: 'rgba(185,231,94,0.22)',  text: 'rgba(100,155,40,1)'  },
   'Agence Soir':  { bg: 'rgba(154,192,77,0.22)',  text: 'rgba(85,140,30,1)'   },
   'BO':           { bg: 'rgba(253,224,71,0.2)',    text: 'rgba(253,224,71,1)'  },
+  'BO TLT':       { bg: 'rgba(234,179,8,0.22)',    text: 'rgba(234,179,8,1)'   },
   'CP':           { bg: 'rgba(68,0,255,0.12)',     text: 'rgba(68,0,255,1)'    },
   'Indisponible': { bg: 'rgba(176,176,176,0.18)',  text: 'rgba(176,176,176,1)' },
   'Récup':        { bg: 'rgba(230,172,216,0.2)',   text: 'rgba(230,172,216,1)' },
@@ -1025,7 +1027,53 @@ export const useForecastStore = defineStore('forecast', () => {
           }
         }
 
-        // ── 5b. Swap : collab contraint non couvert par TLT ↔ partenaire valide ──
+        // ── 5b. BO TLT : les BO peuvent télétravailler ────────────────────────────
+        // Règles : 2 jours TLT max/semaine (quota partagé avec le TLT classique via
+        // personTltCount), jamais le mercredi, et il doit toujours rester au moins
+        // un BO en présentiel chaque jour. Les jours BO passés en TLT deviennent
+        // la catégorie « BO TLT ».
+        {
+          // BO par jour + jours BO par personne (non-mercredi, TLT autorisé)
+          const boByDay    = {}   // iso  -> [names]
+          const boByPerson = {}   // name -> [isos]
+          for (const iso of nonWedDays) {
+            for (const p of available) {
+              const name = `${p.nom} ${p.prenom}`
+              if (matrix[name]?.[iso] !== 'BO') continue
+              ;(boByDay[iso] ||= []).push(name)
+              if (p.peutTLT !== false) (boByPerson[name] ||= []).push(iso)
+            }
+          }
+          const boTltPerDay = {}   // iso -> nb de BO déjà passés en TLT
+
+          // 2 passes : équité (on sert d'abord ceux qui ont le moins de TLT)
+          for (let pass = 0; pass < 2; pass++) {
+            const eligible = Object.keys(boByPerson)
+              .sort((a, b) => (personTltCount[a] || 0) - (personTltCount[b] || 0) || a.localeCompare(b, 'fr'))
+            for (const name of eligible) {
+              if ((personTltCount[name] || 0) !== pass) continue   // remplit 0 puis 1
+              if ((personTltCount[name] || 0) >= 2) continue        // quota TLT hebdo atteint
+              // Jours candidats : garder ≥1 BO présentiel, pas déjà TLT
+              const candidates = boByPerson[name].filter(iso => {
+                if (tltDays.has(`${name}|${iso}`)) return false
+                const boCount = boByDay[iso]?.length || 0
+                return (boTltPerDay[iso] || 0) < boCount - 1
+              })
+              if (!candidates.length) continue
+              // Préférer le jour qui garde le plus de BO présentiels (moins de tension)
+              candidates.sort((a, b) =>
+                (boByDay[b].length - (boTltPerDay[b] || 0)) - (boByDay[a].length - (boTltPerDay[a] || 0))
+              )
+              const day = candidates[0]
+              matrix[name][day]    = 'BO TLT'
+              tltDays.add(`${name}|${day}`)
+              boTltPerDay[day]     = (boTltPerDay[day] || 0) + 1
+              personTltCount[name] = (personTltCount[name] || 0) + 1
+            }
+          }
+        }
+
+        // ── 5c. Swap : collab contraint non couvert par TLT ↔ partenaire valide ──
         // Si un collab a une contrainte "famille X → TLT seulement" mais que son quota TLT est
         // épuisé (ou jour mercredi), on échange sa famille avec un autre collab du même jour
         // qui peut être sur site pour X et dont le créneau est acceptable pour le contraint.
