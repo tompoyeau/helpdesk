@@ -51,7 +51,7 @@
           <span>Règles</span>
         </button>
         <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:8px">
-          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi · pas de journées vertes si &lt; 3 mois d'ancienneté
+          Équitable · même horaire/semaine mais ETP en priorité · TLT max 2j/semaine · pas de TLT le mercredi · pas de journées vertes sans télétravail
         </span>
         <!-- Option absences base test -->
         <label class="opt-test-absences" :class="{ active: useTestAbsences }">
@@ -305,6 +305,7 @@
           <div class="info-section">
             <div class="info-section-title">Journées vertes (Agence)</div>
             <p>Les créneaux Agence correspondent aux besoins non couverts après les affectations classiques. Maximum <strong>2 jours Agence par personne par semaine</strong>. La distribution suit une rotation mensuelle avec égalisation du ratio historique sur une fenêtre glissante d'un an (ou depuis la date d'arrivée si plus récente).</p>
+            <p style="margin-top:6px">Les collaborateurs <strong>sans télétravail</strong> ne font <strong>pas de journée verte</strong> : ils sont toujours affectés à un shift et exclus de la rotation d'équité des journées vertes, pour ne pas les faire ressortir à tort.</p>
           </div>
 
           <!-- BO -->
@@ -380,7 +381,8 @@
 
                 <!-- Agence ratio -->
                 <td class="eqt-bar-cell eqt-agence">
-                  <div class="eqt-bar-wrap">
+                  <div v-if="isNoTlt(person)" class="eqt-na" title="Sans télétravail — pas de journée verte">—</div>
+                  <div v-else class="eqt-bar-wrap">
                     <div class="eqt-bar eqt-bar-green" :style="{ width: Math.min(getAgencePct(person), 100) + '%' }"></div>
                     <span class="eqt-pct eqt-pct-green">{{ getAgencePct(person) }}%</span>
                     <span class="eqt-abs">({{ getAgenceDays(person) }}j / {{ getTotalActiveDays(person) }}j)</span>
@@ -802,6 +804,7 @@
 .eqt-pct { font-size: 0.6875rem; font-weight: 700; color: var(--text); min-width: 32px; }
 .eqt-pct-green { color: #3f6212; }
 .eqt-abs { font-size: 0.5625rem; color: var(--text-muted); }
+.eqt-na { font-size: 0.75rem; font-weight: 700; color: var(--text-subtle); }
 .sort-arrow { font-size: 0.5rem; margin-left: 2px; }
 
 /* ── Popup édition cellule ── */
@@ -936,6 +939,11 @@ const equityPersons = computed(() =>
 const equityPersonsSorted = computed(() => {
   const { key, dir } = equitySort.value
   return [...equityPersons.value].sort((a, b) => {
+    // Tri par Agence : les sans-TLT (pas de journée verte) toujours en bas
+    if (key === 'agence') {
+      const na = isNoTlt(a), nb = isNoTlt(b)
+      if (na !== nb) return na ? 1 : -1
+    }
     let va, vb
     if      (key === 'nom')    { va = a;                       vb = b }
     else if (key === 'total')  { va = getHistTotal(a);         vb = getHistTotal(b) }
@@ -1321,6 +1329,11 @@ function getHistPct(person, shift) {
 }
 
 /* ── Ratio journées vertes (Agence) ── */
+// Sans télétravail → pas de journée verte : la colonne Agence n'a pas de sens
+// pour ces personnes, on ne les fait pas ressortir dans l'équité.
+function isNoTlt(person) {
+  return fc.preview?.noTltPersons?.has(person) ?? false
+}
 function getAgenceDays(person) {
   return fc.preview?.personStats?.[person]?.agenceDays ?? 0
 }

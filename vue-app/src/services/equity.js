@@ -61,11 +61,13 @@ export const EQUITY_DIMENSIONS = [
 const DIM_BY_KEY = Object.fromEntries(EQUITY_DIMENSIONS.map(d => [d.key, d]))
 
 // Éligibilité d'une personne à une dimension.
+// JOURS VERTS      : exclut peutTLT === false (sans télétravail → pas de journée verte).
 // TLT              : exclut peutTLT === false ET les personnes de BO (peutBO === true).
 // SAMEDI TRAVAILLÉ : exclut peutTLT === false (samedis = TLT Matin ; les BO en font).
 // SAMEDI ASTREINTE : aucune restriction TLT (l'astreinte n'est pas liée au télétravail).
 // Dans tous les cas, les exclus ne sont ni signalés, ni comptés dans la moyenne.
 function dimEligible(key, person) {
+  if (key === 'agence') return person?.peutTLT !== false
   if (key === 'tlt')    return person?.peutTLT !== false && person?.peutBO !== true
   if (key === 'samedi') return person?.peutTLT !== false
   return true

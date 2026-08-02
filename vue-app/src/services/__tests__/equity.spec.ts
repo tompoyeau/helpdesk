@@ -163,6 +163,25 @@ describe('computeEquity', () => {
     expect(sam.rows.some(r => r.name === 'NOO Tlt')).toBe(false)
   })
 
+  it('exclut des jours verts les personnes qui ne font pas de TLT', () => {
+    const withAgence = () => {
+      const o = daysOf('Matin')
+      o['2026-06-08'] = [{ categorie: 'Agence Matin', slots: 30 }]
+      return o
+    }
+    const planning = {
+      'AAA Aaa': withAgence(),
+      'BBB Bbb': daysOf('Matin'),
+      'NOO Tlt': daysOf('Matin'),   // ne peut pas TLT → hors dimension jours verts
+    }
+    const personnesData = { uidNo: { nom: 'NOO', prenom: 'Tlt', peutTLT: false } }
+    const nameToUid = { 'NOO Tlt': 'uidNo' }
+    const res = computeEquity(planning, Object.keys(planning), personnesData, nameToUid, WINDOW)
+
+    const agence = res.dimensions.find(d => d.key === 'agence')!
+    expect(agence.rows.some(r => r.name === 'NOO Tlt')).toBe(false)
+  })
+
   it('ignore les personnes sous le seuil de jours travaillés', () => {
     const planning = {
       'AAA Aaa': daysOf('Soir'),

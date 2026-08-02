@@ -345,26 +345,9 @@ function equityScore(history, personName, shift, lastWeekShift, noAssignStreak) 
   return score
 }
 
-/**
- * Retourne le nombre de mois d'ancienneté d'une personne à une date ISO donnée.
- * Format arrivee Firestore : "DD MM YYYY"
- * Retourne Infinity si pas de date d'arrivée (considéré comme senior).
- */
-function monthsSinceArrival(person, isoDate) {
-  if (!person.arrivee) return Infinity
-  const parts = person.arrivee.trim().split(' ')
-  if (parts.length < 3) return Infinity
-  const arrivee = new Date(+parts[2], +parts[1] - 1, +parts[0])
-  const day     = new Date(isoDate + 'T12:00:00')
-  const months  = (day.getFullYear() - arrivee.getFullYear()) * 12
-               + (day.getMonth()     - arrivee.getMonth())
-               + (day.getDate()      >= arrivee.getDate() ? 0 : -1)
-  return Math.max(0, months)
-}
-
 // Assignation ETP-stricte par jour avec cohérence hebdo
 // weekFamilies  = { name: fam }  — shift établi au J1, sert de référence pour les jours suivants
-// mustAssign    = Set<name>       — ne peuvent pas être en OFF (< 3 mois)
+// mustAssign    = Set<name>       — ne peuvent pas être en journée verte (sans TLT) → toujours un shift
 // blockedShifts = { name: Set }  — shifts interdits ce jour (contrainte mixte on-site)
 function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, weekFamilies, mustAssign = new Set(), blockedShifts = {}) {
   const assignments = {}
@@ -400,7 +383,7 @@ function assignShifts(pool, dayNeeds, history, lastWeekShift, noAssignStreak, we
       const wf = weekFamilies?.[name]
       if      (wf === shift) score += 0.8   // même shift que J1 → fort bonus de cohérence
       else if (wf != null)   score -= 0.6   // shift différent de J1 → pénalité modérée
-      // Boost fort pour les < 3 mois : toujours assignés avant les autres
+      // Boost fort pour les sans-TLT : toujours assignés à un shift (jamais journée verte)
       if (mustAssign.has(name))             score += 100
       // Shift bloqué (contrainte mixte : TLT-only sur jour sans TLT) → impossible
       if (blockedShifts[name]?.has(shift))  score -= 200
@@ -899,16 +882,21 @@ export const useForecastStore = defineStore('forecast', () => {
           const surplus = pool.length - totalNeeded
           let assignPool = pool
 
-          // Noms des collabs avec < 3 mois d'ancienneté ce jour → ne peuvent pas être en OFF
+          // Collabs sans télétravail (peutTLT === false) : pas de TLT → pas de journée
+          // verte (slot vide / Agence). Ils sont toujours affectés à un shift (boost
+          // dans assignShifts) et exclus de la rotation d'équité des journées vertes,
+          // pour ne pas les faire ressortir à tort.
           const mustAssignNames = new Set(
-            pool.filter(p => monthsSinceArrival(p, iso) < 3).map(p => `${p.nom} ${p.prenom}`)
+            pool
+              .filter(p => p.peutTLT === false)
+              .map(p => `${p.nom} ${p.prenom}`)
           )
 
           if (surplus > 0) {
             const restEligible = pool.filter(p => {
               const name = `${p.nom} ${p.prenom}`
               if ((weekRestDays[name] || 0) >= 2) return false          // déjà 2 jours OFF cette semaine
-              if (mustAssignNames.has(name))       return false          // < 3 mois → jamais en OFF
+              if (mustAssignNames.has(name))       return false          // sans TLT → jamais en journée verte
               return true
             })
             const restCount    = Math.min(surplus, restEligible.length)
@@ -1185,6 +1173,9 @@ export const useForecastStore = defineStore('forecast', () => {
       matrix,
       activeByDate,
       fixedPersons,  // Set<name> — lignes non-éditables dans la prévisualisation
+      noTltPersons: new Set(   // Set<name> — sans télétravail → pas de journée verte
+        runPersons.filter(p => p.peutTLT === false).map(p => `${p.nom} ${p.prenom}`)
+      ),
       history:  analyzeHistory(
         Object.fromEntries(
           Object.entries(planningData).filter(([name]) =>
