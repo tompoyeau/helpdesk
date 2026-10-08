@@ -24,6 +24,7 @@
           :href="`mailto:${personEmail}`"
           class="btn-email"
           :title="`Envoyer un mail à ${personEmail}`"
+          @click="track('E-mail à un collaborateur')"
         >
           <Mail :size="13" />
           <span class="hide-xs">Envoyer un mail</span>
@@ -264,6 +265,7 @@ import { useUserStore } from '@/stores/userStore'
 import { computePersonStats, computePersonCatBreakdown } from '@/stores/statsStore'
 import { Mail, Download } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
+import { track } from '@/analytics'
 import DayModal from '@/components/planning/DayModal.vue'
 import PlanningWeek from '@/components/planning/PlanningWeek.vue'
 
@@ -490,6 +492,7 @@ function openModal(day) { modalDate.value = day; modalOpen.value = true }
 
 /* ── Export ICS ── */
 function exportICS() {
+  track('Export agenda (.ics)')
   // Utilise le planning complet (non filtré) pour couvrir les 2 prochaines semaines
   const details = data.planning?.[props.personName]
   if (!details) return
