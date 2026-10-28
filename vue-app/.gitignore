@@ -38,6 +38,9 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 
+# Service worker généré par vite-plugin-pwa en dev
+dev-dist
+
 # Variables d'environnement (ne jamais committer)
 .env
 .env.local

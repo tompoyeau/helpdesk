@@ -131,9 +131,6 @@ setup_tache_planifiee.ps1
 setup_tache_verification.ps1
 planning.json
 
-.claude
-
-Claude Setup.exe
 planning.enc.json
 # Données prod exportées pour l emulateur Firebase
 emulator-seed/
